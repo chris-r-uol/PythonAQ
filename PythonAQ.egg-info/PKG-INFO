@@ -1,5 +1,20 @@
+Metadata-Version: 2.1
+Name: PythonAQ
+Version: 0.1.0
+Summary: Air Quality Data Processing and Visualization Toolkit
+Home-page: https://github.com/yourusername/airpy
+Author: Chris Rushton
+Author-email: c.e.rushton@leeds.ac.uk
+License: MIT
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.6
+Description-Content-Type: text/markdown
+License-File: LICENSE
+
 Air Quality Data Analysis and Visualization Toolkit
-This repository provides a comprehensive set of Python tools for downloading, processing, and visualising air quality and meteorological data. The toolkit is designed for researchers, scientists, and environmental analysts who need to work with air quality datasets from various sources, such as AURN, NOAA, and others.
+This repository provides a comprehensive set of Python tools for downloading, processing, and visualizing air quality and meteorological data. The toolkit is designed for researchers, scientists, and environmental analysts who need to work with air quality datasets from various sources, such as AURN, NOAA, and others.
 
 ## Table of Contents
 - [Features](#features)
@@ -12,7 +27,7 @@ This repository provides a comprehensive set of Python tools for downloading, pr
         - [download_noaa_data](#download_noaa_data)
     - [Data Parsing Functions](#data-parsing-functions)
         - [parse_noaa_data](#parse_noaa_data)
-    - [Visualisation Functions](#visualisation-functions)
+    - [Visualization Functions](#visualization-functions)
         - [calendar](#calendar)
         - [map_sites](#map_sites)
         - [polar_cluster](#polar_cluster)
@@ -26,14 +41,14 @@ This repository provides a comprehensive set of Python tools for downloading, pr
     - [Utilities](#utilities)
         - [e_sat and rh](#e_sat-and-rh)
 - [Contributing](#contributing)
-- [Licence](#licence)
+- [License](#license)
 
 ## Features
 - **Data Retrieval**: Functions to download air quality and meteorological data from various sources.
 - **Data Parsing**: Utilities to parse and clean raw data into usable formats.
-- **Visualisation**: Advanced plotting functions using Plotly for interactive data visualisation.
+- **Visualization**: Advanced plotting functions using Plotly for interactive data visualization.
 - **Statistical Analysis**: Tools for performing regression analysis and clustering.
-- **Meteorological Calculations**: Functions to calculate relative humidity and saturation vapour pressure.
+- **Meteorological Calculations**: Functions to calculate relative humidity and saturation vapor pressure.
 
 ## Installation
 To use this toolkit, clone the repository and install the required dependencies:
@@ -56,13 +71,11 @@ pip install -r requirements.txt
 - streamlit (for testing and web-application purposes)
 
 ## Web Application Demo
-A web application written using Streamlit (https://streamlit.io) is available as app.py. To run this application, first ensure Streamlit is installed and you are in the appropriate directory, then use the following commands to execute the programme.
+A web application written using Streamlit (https://streamlit.io) is available as app.py.  To run this application, first ensure Streamlit is installed and you are in the appropriate directory, then use the following commands to execute the program.
 
 ```bash
 streamlit run app.py
 ```
-
-The web app has pre-loaded the current visualisation functions and implementations can be used elsewhere.
 
 ## Usage
 
@@ -132,10 +145,10 @@ parsed_df = parse_noaa_data(raw_noaa_df)
 **Returns:**
 - `pd.DataFrame`: Processed DataFrame with meteorological parameters.
 
-### Visualisation Functions
+### Visualization Functions
 
 #### calendar
-Creates a calendar heatmap visualisation of the provided data.
+Creates a calendar heatmap visualization of the provided data.
 
 ```python
 from PythonAQ import calendar
@@ -264,7 +277,7 @@ fig.show()
 - `go.Figure`: Theil-Sen regression plot.
 
 #### time_plot
-Plots time series data with options for grouping, stacking, and normalisation.
+Plots time series data with options for grouping, stacking, and normalization.
 
 ```python
 from PythonAQ import time_plot
@@ -299,7 +312,7 @@ fig.show()
 ### Utilities
 
 #### e_sat and rh
-Functions to calculate saturation vapour pressure and relative humidity.
+Functions to calculate saturation vapor pressure and relative humidity.
 
 ```python
 from PythonAQ import e_sat, rh
@@ -311,7 +324,7 @@ relative_humidity = rh(25, 20)
 - `T_obs` (float or array-like): Temperature in Celsius.
 
 **e_sat Returns:**
-- `float or ndarray`: Saturation vapour pressure in millibars.
+- `float or ndarray`: Saturation vapor pressure in millibars.
 
 **rh Parameters:**
 - `T` (float or array-like): Air temperature in Celsius.
@@ -323,5 +336,5 @@ relative_humidity = rh(25, 20)
 ## Contributing
 Contributions are welcome! Please submit a pull request or open an issue to discuss any changes or additions.
 
-## Licence
-This project is licensed under the MIT Licence.
+## License
+This project is licensed under the MIT License.

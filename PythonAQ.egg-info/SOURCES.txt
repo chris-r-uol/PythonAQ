@@ -1,0 +1,11 @@
+LICENSE
+MANIFEST.in
+README.md
+setup.cfg
+setup.py
+PythonAQ.egg-info/PKG-INFO
+PythonAQ.egg-info/SOURCES.txt
+PythonAQ.egg-info/dependency_links.txt
+PythonAQ.egg-info/not-zip-safe
+PythonAQ.egg-info/requires.txt
+PythonAQ.egg-info/top_level.txt

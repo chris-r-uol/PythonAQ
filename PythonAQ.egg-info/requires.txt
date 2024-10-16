@@ -1,0 +1,1 @@
+pandas==2.2.2numpy==1.26.0requests==2.31.0rdata==0.11.2plotly==5.22.0scikit-learn==1.5.1pygam==0.9.0scipy==1.11.0streamlit==1.38.0

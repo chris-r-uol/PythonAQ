@@ -248,7 +248,7 @@ fig.show()
 - `pd.DataFrame`: Summary statistics.
 
 #### theil_sen_plot
-Performs Theil-Sen regression analysis and plots the time series data.
+Performs Theil-Sen regression analysis and plots the time series data.  Deseasoned data can be added to the plot using an additional dataframe and is calculated using the deseason_data function.
 
 ```python
 from PythonAQ import theil_sen_plot
@@ -259,6 +259,7 @@ fig.show()
 **Parameters:**
 - `df` (pd.DataFrame): Input data.
 - `pollutant_col` (str): Column for analysis.
+- `deseason_data` (pd.DataFrame): Optional deseasoned data for plotting
 
 **Returns:**
 - `go.Figure`: Theil-Sen regression plot.
@@ -297,6 +298,39 @@ fig.show()
 - `pd.DataFrame`: Summary statistics.
 
 ### Utilities
+The utilities functions are various helper functions to aid the rest of the functionality.
+
+#### deseason_data
+A function to deseason data.
+
+```python
+from PythonAQ import deseason_data
+ds = deseason_data(data=df, pollutant_column='NO', interval='7D', period=utilities.get_period('7D') , method='additive', date_column='date_time')
+```
+
+**deseason_data Parameters**
+- `data` (pd.DataFrame): Data frame containing the data to be deseasoned.
+- `pollutant_column` (str): Column heading for the pollutant to be analysed
+- `interval` (str): The time interval to be averaged, can be H, D, M, Q, Y/A.
+- `period` (int): The period for the deseasoning algorith.  This can be solved in terms of the interval by using the utilities.get_period() function
+- `method` (str): The method for performing the deseasoning
+- `date_column` (str): The location of the date and time information in the dataset, defaults to 'date_time'.
+
+**Returns:**
+- `pd.DataFrame`: Data frame containing deseasoned data in the column deseasoned_{pollutant_column}
+
+#### get_period
+A function to convert the pandas time series strings into appropriate values for the deseasoning algorithm
+
+```python
+from PythonAQ import get_period('7D')
+```
+
+**get_period Parameters**
+- `interval` (str): The interval to be conveted into 
+
+**Returns:**
+- `int`: Number of periods in one seasonal cycle (e.g., a year).
 
 #### e_sat and rh
 Functions to calculate saturation vapour pressure and relative humidity.

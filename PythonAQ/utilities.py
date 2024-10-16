@@ -63,21 +63,21 @@ def rh(T, T_d):
         logging.error(f"Error in RH calculation: {e}")
         return np.full_like(T, np.nan)
 
-def get_period(t_ts):
+def get_period(interval):
     """
     Calculate the period for seasonal decomposition based on the resampling interval.
 
     Parameters:
-    - t_ts (str): Resampling interval string (e.g., '7D', 'M', 'Q').
+    - interval (str): Resampling interval string (e.g., '7D', 'M', 'Q').
 
     Returns:
     - int: Number of periods in one seasonal cycle (e.g., a year).
     """
-    if t_ts is None or t_ts.strip() == '':
+    if interval is None or interval.strip() == '':
         # Default period for daily data
         return 365
     else:
-        offset = to_offset(t_ts)
+        offset = to_offset(interval)
         n = offset.n
         base_freq = offset.name
         
@@ -98,7 +98,7 @@ def get_period(t_ts):
         elif base_freq == 'S':
             periods_per_year = 365.25 * 24 * 60 * 60 / n
         else:
-            raise ValueError(f"Unsupported frequency '{t_ts}'.")
+            raise ValueError(f"Unsupported interval '{interval}'.")
         return int(round(periods_per_year))
 
 

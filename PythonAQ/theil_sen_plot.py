@@ -11,7 +11,8 @@ def theil_sen_plot(
     title='Theil-Sen Regression Plot',
     yaxis_title='Concentration',
     width=1000,
-    height=600
+    height=600,
+    deseason_data=None
 ):
     """
     Plots time series data with Theil-Sen regression analysis.
@@ -25,6 +26,7 @@ def theil_sen_plot(
     - yaxis_title (str): Label for the y-axis.
     - width (int): Width of the figure.
     - height (int): Height of the figure.
+    - deseason_data (pd.DataFrame): DataFrame containing deseasoned data. The deseasoned column should be named 'deseasoned_{pollutant_col}'.
 
     Returns:
     - fig (plotly.graph_objects.Figure): The resulting plot.
@@ -55,13 +57,6 @@ def theil_sen_plot(
     # Convert date to numeric for regression (ordinal)
     df['date_numeric'] = df[date_col].map(pd.Timestamp.toordinal)
 
-    # Drop any rows with NaNs in 'date_numeric' or 'pollutant_col'
-    df.dropna(subset=['date_numeric', pollutant_col], inplace=True)
-
-    # Check if there's any data left
-    if df.empty:
-        raise ValueError("No data available for regression after removing NaN values.")
-
     # Prepare data for regression
     X = df['date_numeric'].values.reshape(-1, 1)
     y = df[pollutant_col].values
@@ -74,7 +69,6 @@ def theil_sen_plot(
     # Calculate slope per year
     days_in_year = 365.25
     slope_per_year = ts_regressor.coef_[0] * days_in_year
-    intercept = ts_regressor.intercept_
 
     # Calculate upper and lower bounds (approximate using residuals)
     residuals = y - y_pred
@@ -140,7 +134,7 @@ def theil_sen_plot(
     rate_text = f"Rate of Change: {slope_per_year:.3f} units/year"
     fig.add_annotation(
         x=df[date_col].iloc[len(df) // 2],
-        y=max(y_pred)+10,
+        y=max(y_pred) + 0.05 * (max(y_pred) - min(y_pred)),
         text=rate_text,
         showarrow=False,
         font=dict(size=12, color='darkgreen'),
@@ -148,6 +142,84 @@ def theil_sen_plot(
         bordercolor='darkgreen',
         borderwidth=1
     )
+
+    # If deseason_data is provided, perform analysis on deseasoned data
+    if deseason_data is not None:
+        # Ensure date_col is datetime
+        deseason_df = deseason_data.copy()
+        
+        deseason_df[date_col] = pd.to_datetime(deseason_df[date_col])
+
+        # Construct the deseasoned pollutant column name
+        deseasoned_col = f'deseasoned_{pollutant_col}'
+
+        # Select necessary columns
+        deseason_df = deseason_df[[date_col, deseasoned_col]]
+        
+        # Drop rows with missing values
+        deseason_df.dropna(subset=[date_col, deseasoned_col], inplace=True)
+
+        # Sort by date
+        deseason_df.sort_values(by=date_col, inplace=True)
+
+        # Aggregate data if aggregation frequency is specified
+        if agg_freq is not None:
+            deseason_df.set_index(date_col, inplace=True)
+            deseason_df = deseason_df.resample(agg_freq)[[deseasoned_col]].mean()
+            deseason_df.reset_index(inplace=True)
+            deseason_df.dropna(subset=[deseasoned_col], inplace=True)
+
+        # Convert date to numeric for regression
+        deseason_df['date_numeric'] = deseason_df[date_col].map(pd.Timestamp.toordinal)
+
+        # Prepare data for regression
+        X_ds = deseason_df['date_numeric'].values.reshape(-1, 1)
+        y_ds = deseason_df[deseasoned_col].values
+
+        # Perform Theil-Sen regression on deseasoned data
+        ts_regressor_ds = TheilSenRegressor()
+        ts_regressor_ds.fit(X_ds, y_ds)
+        y_pred_ds = ts_regressor_ds.predict(X_ds)
+
+        # Calculate slope per year for deseasoned data
+        slope_per_year_ds = ts_regressor_ds.coef_[0] * days_in_year
+
+        # Plot deseasoned data
+        fig.add_trace(
+            go.Scatter(
+                x=deseason_df[date_col],
+                y=deseason_df[deseasoned_col],
+                mode='lines+markers',
+                name='Deseasoned Data',
+                line=dict(color='#008080'),
+                marker=dict(size=5),
+                showlegend=True
+            )
+        )
+        # Plot deseasoned regression line
+        fig.add_trace(
+            go.Scatter(
+                x=deseason_df[date_col],
+                y=y_pred_ds,
+                mode='lines',
+                name='Deseasoned Regression',
+                line=dict(color='#800080'),
+                showlegend=True
+            )
+        )
+
+        # Add rate per year for deseasoned data as annotation
+        rate_text_ds = f"Deseasoned Rate: {slope_per_year_ds:.3f} units/year"
+        fig.add_annotation(
+            x=deseason_df[date_col].iloc[len(deseason_df) // 2],
+            y=max(y_pred_ds) - 0.05 * (max(y_pred_ds) - min(y_pred_ds)),
+            text=rate_text_ds,
+            showarrow=False,
+            font=dict(size=12, color='darkred'),
+            bgcolor='rgba(255,255,255,0.7)',
+            bordercolor='darkred',
+            borderwidth=1
+        )
 
     # Alternate background colors for each year
     years = df[date_col].dt.year.unique()
@@ -178,7 +250,8 @@ def theil_sen_plot(
             y=0.95,
             xanchor='right',
             yanchor='top',
-            bgcolor='rgba(255, 255, 255, 0.5)'),  # Semi-transparent background,
+            bgcolor='rgba(255, 255, 255, 0.5)'
+        ),
         title=title,
         xaxis_title='Date',
         yaxis_title=yaxis_title,

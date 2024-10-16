@@ -1,9 +1,6 @@
 import streamlit as st
 import data
-import plots
-import dicts
 import pandas as pd
-from dictionaries import met_sites
 from wind_rose import wind_rose
 from datetime import datetime
 from summary_plot import summary_plot
@@ -14,6 +11,8 @@ from map_sites import map_sites
 from polar_cluster import polar_cluster
 from time_plot import time_plot
 from theil_sen_plot import theil_sen_plot
+from deweather_deseason import deseason_data
+import utilities
 
 def main():
     st.set_page_config(page_title='Air Quality Python Tools Demo App', layout='wide')
@@ -40,12 +39,22 @@ def main():
     with st.expander('Raw Data'):
         st.dataframe(df, use_container_width=True)
 
+    
     ####### Add new functions from here
     st.header('Plots')
+    
     st.subheader('Theil-Sen Regression')
+    st.info('The time average strategy can be expressed as hours (H, h), days (D, d), weeks (W, w), months (M, m), quarters (Q, q) and years (Y, y). For example, entering _"7D"_ will give a seven-day average.')
     t_ts = st.text_input('Select Time Average Strategy (leave blank for none)', value=None, key='ts_tav')
     col_ts = st.selectbox('Select Column for Theil-Sen regression', options=sorted(df.keys()))
-    fig = theil_sen_plot(df, pollutant_col=col_ts, agg_freq=t_ts)
+    
+    do_ds = st.checkbox('Check do do deseasoning', value=False)
+    if do_ds:
+        df_ds = deseason_data(data=df, pollutant_column=col_ts, interval=t_ts, period=utilities.get_period(t_ts) , method='additive', date_column='date_time').reset_index()
+        fig = theil_sen_plot(df, pollutant_col=col_ts, agg_freq=t_ts, deseason_data=df_ds)
+    else:
+        fig = theil_sen_plot(df, pollutant_col=col_ts, agg_freq=t_ts)
+        
     st.plotly_chart(fig, use_container_width=True)
 
 

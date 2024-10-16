@@ -1,5 +1,6 @@
 import numpy as np
 import logging
+from pandas.tseries.frequencies import to_offset
 
 def e_sat(T_obs):
     """
@@ -61,3 +62,46 @@ def rh(T, T_d):
     except Exception as e:
         logging.error(f"Error in RH calculation: {e}")
         return np.full_like(T, np.nan)
+
+def get_period(t_ts):
+    """
+    Calculate the period for seasonal decomposition based on the resampling interval.
+
+    Parameters:
+    - t_ts (str): Resampling interval string (e.g., '7D', 'M', 'Q').
+
+    Returns:
+    - int: Number of periods in one seasonal cycle (e.g., a year).
+    """
+    if t_ts is None or t_ts.strip() == '':
+        # Default period for daily data
+        return 365
+    else:
+        offset = to_offset(t_ts)
+        n = offset.n
+        base_freq = offset.name
+        
+        if base_freq in ['A', 'YE-DEC']:
+            periods_per_year = 1 / n
+        elif base_freq == 'QE-DEC':
+            periods_per_year = 4 / n
+        elif base_freq == 'ME':
+            periods_per_year = 12 / n
+        elif base_freq == 'W-SUN':
+            periods_per_year = 52 / n
+        elif base_freq == 'D':
+            periods_per_year = 365.25 / n
+        elif base_freq == 'h':
+            periods_per_year = 365.25 * 24 / n
+        elif base_freq in ['T', 'min']:
+            periods_per_year = 365.25 * 24 * 60 / n
+        elif base_freq == 'S':
+            periods_per_year = 365.25 * 24 * 60 * 60 / n
+        else:
+            raise ValueError(f"Unsupported frequency '{t_ts}'.")
+        return int(round(periods_per_year))
+
+
+
+
+

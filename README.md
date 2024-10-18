@@ -1,4 +1,4 @@
-Air Quality Data Analysis and Visualization Toolkit
+# PythonAQ - Air Quality Data Analysis and Visualization Toolkit
 This repository provides a comprehensive set of Python tools for downloading, processing, and visualising air quality and meteorological data. The toolkit is designed for researchers, scientists, and environmental analysts who need to work with air quality datasets from various sources, such as AURN, NOAA, and others.
 
 ## Table of Contents
@@ -24,6 +24,8 @@ This repository provides a comprehensive set of Python tools for downloading, pr
         - [time_plot](#time_plot)
         - [wind_rose](#wind_rose)
     - [Utilities](#utilities)
+        - [deseason_data](#deseason_data)
+        - [get_period](#get_period)
         - [e_sat and rh](#e_sat-and-rh)
 - [Contributing](#contributing)
 - [Licence](#licence)

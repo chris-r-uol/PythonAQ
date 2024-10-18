@@ -1,9 +1,9 @@
-pandas==2.2.2
 numpy==1.26.0
+pandas==2.2.2
+plotly==5.22.0
+pygam==0.9.1
 requests==2.31.0
 rdata==0.11.2
-plotly==5.22.0
 scikit-learn==1.5.1
-pygam==0.9.0
-scipy==1.11.0
+scipy==1.11.3
 streamlit==1.38.0

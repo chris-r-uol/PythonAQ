@@ -63,10 +63,6 @@ def theil_sen_plot(
     intercept_lo = np.median(y_values - lo_slope * x_values)
     intercept_up = np.median(y_values - up_slope * x_values)
 
-    import streamlit as st
-
-    st.write(f"Intercept {intercept:.3f}")
-
     # Predict values for plotting
     y_pred = (slope * x_values) + intercept
     # Scipy's theilslopes provides the slope CI, we map that to the lines

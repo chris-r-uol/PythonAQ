@@ -11,11 +11,19 @@ import pytest
 import PythonAQ
 
 EXPECTED_API = {
+    # Data retrieval and parsing
     'get_r_data', 'import_aq_meta', 'download_aurn_data', 'download_noaa_data',
-    'parse_noaa_data', 'calendar', 'map_sites', 'polar_cluster',
-    'polar_frequency_plot', 'polar_plot', 'pollutant_rose', 'summary_plot',
-    'smooth_trend_plot', 'theil_sen_plot', 'time_plot', 'wind_rose',
-    'deseason_data', 'e_sat', 'rh', 'get_period',
+    'parse_noaa_data',
+    # Visualisation
+    'calendar', 'corr_plot', 'map_sites', 'percentile_rose', 'polar_cluster',
+    'polar_frequency_plot', 'polar_plot', 'pollutant_rose', 'scatter_plot',
+    'summary_plot', 'smooth_trend_plot', 'theil_sen_plot', 'time_plot',
+    'time_variation', 'trend_level', 'wind_rose',
+    # Statistics
+    'aq_stats', 'mod_stats',
+    # Utilities
+    'calc_percentile', 'cut_data', 'deseason_data', 'e_sat', 'get_period',
+    'rh', 'rolling_mean', 'select_by_date', 'time_average',
 }
 
 
@@ -50,6 +58,8 @@ def test_dir_lists_the_public_api():
     'data', 'utilities', 'wind_rose', 'pollutant_rose', 'polar_plot',
     'polar_cluster', 'polar_frequency', 'time_plot', 'theil_sen_plot',
     'smooth_trend_plot', 'summary_plot', 'map_sites', 'deweather_deseason',
+    'data_utils', 'time_variation', 'percentile_rose', 'trend_level',
+    'scatter_plot', 'corr_plot', 'statistics',
 ])
 def test_submodules_import_standalone(module):
     """Submodules must import via the package, not via a flat sys.path hack."""

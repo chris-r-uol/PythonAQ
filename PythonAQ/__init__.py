@@ -33,18 +33,33 @@ from .data import (
 )
 
 # Visualisation
+from .corr_plot import corr_plot
 from .map_sites import map_sites
+from .percentile_rose import percentile_rose
 from .polar_cluster import polar_cluster
 from .polar_frequency import polar_frequency_plot
 from .polar_plot import polar_plot
 from .pollutant_rose import pollutant_rose
+from .scatter_plot import scatter_plot
 from .smooth_trend_plot import smooth_trend_plot
 from .summary_plot import summary_plot
 from .theil_sen_plot import theil_sen_plot
 from .time_plot import time_plot
+from .time_variation import time_variation
+from .trend_level import trend_level
 from .wind_rose import wind_rose
 
+# Statistics
+from .statistics import aq_stats, mod_stats
+
 # Utilities
+from .data_utils import (
+    calc_percentile,
+    cut_data,
+    rolling_mean,
+    select_by_date,
+    time_average,
+)
 from .deweather_deseason import deseason_data
 from .utilities import e_sat, get_period, rh
 
@@ -57,21 +72,34 @@ __all__ = [
     "parse_noaa_data",
     # Visualisation
     "calendar",
+    "corr_plot",
     "map_sites",
+    "percentile_rose",
     "polar_cluster",
     "polar_frequency_plot",
     "polar_plot",
     "pollutant_rose",
+    "scatter_plot",
     "smooth_trend_plot",
     "summary_plot",
     "theil_sen_plot",
     "time_plot",
+    "time_variation",
+    "trend_level",
     "wind_rose",
+    # Statistics
+    "aq_stats",
+    "mod_stats",
     # Utilities
+    "calc_percentile",
+    "cut_data",
     "deseason_data",
     "e_sat",
     "get_period",
     "rh",
+    "rolling_mean",
+    "select_by_date",
+    "time_average",
     "__version__",
 ]
 

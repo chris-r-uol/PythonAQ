@@ -65,7 +65,7 @@ def polar_plot(
     data['wd_bin'] = pd.cut(data[wd_col], bins=wd_bins_array, labels=False, include_lowest=True)
     
     # Group data by bins and compute statistics
-    grouped = data.groupby(['ws_bin', 'wd_bin'])
+    grouped = data.groupby(['ws_bin', 'wd_bin'], observed=False)
     binned_data = grouped.agg(
         ws_mean=(ws_col, 'mean'),
         wd_mean=(wd_col, 'mean'),

@@ -16,6 +16,9 @@ def summary_plot(df, colours = {'ts':'dodgerblue', 'rug':'crimson', 'histogram':
     - summary_df (pd.DataFrame): DataFrame containing summary statistics for each column.
     """
     
+    # Copy before touching anything, so the caller's DataFrame is left alone.
+    df = df.copy()
+
     # Ensure 'date_time' is in datetime format
     df['date_time'] = pd.to_datetime(df['date_time'])
     

@@ -42,6 +42,7 @@ This repository provides a comprehensive set of Python tools for downloading, pr
         - [get_period](#get_period)
         - [e_sat and rh](#e_sat-and-rh)
 - [Relationship to openair](#relationship-to-openair)
+- [Worked example](#worked-example)
 - [Development](#development)
 - [Contributing](#contributing)
 - [Licence](#licence)
@@ -143,6 +144,22 @@ Two deliberate differences from openair:
   mean wind speed. Pass `vector_ws=True` for the vector magnitude instead.
 - `cut_data(type='daylight')` uses a fixed 07:00-19:00 window rather than
   openair's solar elevation calculation.
+
+## Worked example
+
+`examples/demo_leeds.py` runs every public function against real data for
+Leeds Centre (AURN site `LEED`), 2022-2025, and writes each figure to
+`examples/output/` as a standalone HTML file:
+
+```bash
+pip install -e '.[calendar]'
+python examples/demo_leeds.py
+```
+
+It downloads ~35,000 hourly records from DEFRA plus meteorology from the
+nearest NOAA station, caches them under `examples/output/cache/` so re-runs are
+instant, and checks its own coverage — exiting non-zero if any public function
+goes unexercised. Pass `--refresh` to re-download.
 
 ## Development
 

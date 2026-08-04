@@ -158,19 +158,19 @@ def wind_rose(df, ws_col='ws', wd_col='wd',
     
     # Calculate frequency, including grouping if applicable
     if group_column:
-        freq = data.groupby([group_column, 'direction_bin', 'speed_bin']).size().reset_index(name='count')
+        freq = data.groupby([group_column, 'direction_bin', 'speed_bin'], observed=False).size().reset_index(name='count')
         # Apply adjustment
         freq['count'] = freq['count'] * freq['direction_bin'].map(adjustment_factors)
         if mode == 'percentage':
             # Calculate total counts per direction bin for percentage
-            total_counts = freq.groupby([group_column, 'direction_bin'])['count'].sum().reset_index(name='total')
+            total_counts = freq.groupby([group_column, 'direction_bin'], observed=False)['count'].sum().reset_index(name='total')
             freq = freq.merge(total_counts, on=[group_column, 'direction_bin'])
             freq['value'] = (freq['count'] / freq['total']) * 100
         else:
             # For 'count' mode, use raw counts
             freq['value'] = freq['count']
     else:
-        freq = data.groupby(['direction_bin', 'speed_bin']).size().reset_index(name='count')
+        freq = data.groupby(['direction_bin', 'speed_bin'], observed=False).size().reset_index(name='count')
         # Apply adjustment
         freq['count'] = freq['count'] * freq['direction_bin'].map(adjustment_factors)
         if mode == 'percentage':

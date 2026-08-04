@@ -5,10 +5,19 @@ empty namespace package and every documented import failed.
 """
 
 import importlib
+import importlib.util
 
 import pytest
 
 import PythonAQ
+
+# Public names that need an optional dependency. Everything else must resolve
+# from a plain `pip install .`. Both names are recorded because they differ:
+# the import name uses an underscore, while the error message quotes the PyPI
+# name so it can be pasted straight into pip.
+OPTIONAL_API = {
+    'calendar': {'import_name': 'plotly_calplot', 'pypi_name': 'plotly-calplot'},
+}
 
 EXPECTED_API = {
     # Data retrieval and parsing
@@ -40,9 +49,35 @@ def test_all_advertised_names_are_importable():
     assert EXPECTED_API <= set(PythonAQ.__all__)
 
 
+def _is_installed(name):
+    return importlib.util.find_spec(OPTIONAL_API[name]['import_name']) is not None
+
+
 @pytest.mark.parametrize('name', sorted(EXPECTED_API))
 def test_each_public_name_resolves_and_is_callable(name):
+    if name in OPTIONAL_API and not _is_installed(name):
+        pytest.skip(f"'{name}' needs the optional extra to be installed")
     assert callable(getattr(PythonAQ, name))
+
+
+@pytest.mark.parametrize('name', sorted(OPTIONAL_API))
+def test_optional_member_reports_its_missing_dependency(name):
+    """A member behind an extra must say how to install it.
+
+    The message must quote the *PyPI* name, since that is what gets pasted
+    into pip, and name the extra. Importing the package as a whole must still
+    succeed, so a missing extra never costs access to the rest of the API.
+    """
+    if _is_installed(name):
+        pytest.skip('the optional dependency is installed, so nothing raises')
+
+    pypi_name = OPTIONAL_API[name]['pypi_name']
+    with pytest.raises(ImportError) as excinfo:
+        getattr(PythonAQ, name)
+
+    message = str(excinfo.value)
+    assert pypi_name in message, 'the error should quote the installable name'
+    assert 'pip install' in message, 'the error should give an install command'
 
 
 def test_unknown_attribute_raises_attribute_error():

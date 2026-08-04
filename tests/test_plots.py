@@ -124,6 +124,13 @@ class TestSummaryPlot:
         assert_is_populated_figure(fig)
         assert isinstance(summary, pd.DataFrame)
 
+    def test_does_not_mutate_input(self, aq_df):
+        """Regression: summary_plot wrote back into the caller's DataFrame."""
+        subset = aq_df[['date_time', 'NO2', 'PM10']].copy()
+        before = subset.copy()
+        summary_plot(subset)
+        pd.testing.assert_frame_equal(subset, before)
+
 
 class TestMapSites:
     def test_runs(self):

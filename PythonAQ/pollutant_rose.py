@@ -200,7 +200,7 @@ def pollutant_rose(df, pollutant, wd_col='wd', condition_col=None,
             # Calculate overall mean pollutant
             overall_mean = data[pollutant].mean()
             # Group by and sum pollutant
-            freq = data.groupby([group_column, 'direction_bin', 'pollutant_bin']).agg(
+            freq = data.groupby([group_column, 'direction_bin', 'pollutant_bin'], observed=False).agg(
                 pollutant_sum=(pollutant, 'sum'),
                 count=(pollutant, 'count')
             ).reset_index()
@@ -210,12 +210,12 @@ def pollutant_rose(df, pollutant, wd_col='wd', condition_col=None,
             freq['value'] = (freq['pollutant_sum'] / freq['expected_sum']) * 100
         else:
             # Default statistics: 'count' or 'percentage'
-            freq = data.groupby([group_column, 'direction_bin', 'pollutant_bin']).agg(
+            freq = data.groupby([group_column, 'direction_bin', 'pollutant_bin'], observed=False).agg(
                 count=(pollutant, 'sum')  # Sum pollutant as count
             ).reset_index()
             if mode == 'percentage':
                 # Calculate total counts per group and direction bin for percentage
-                total_counts = freq.groupby([group_column, 'direction_bin'])['count'].sum().reset_index(name='total')
+                total_counts = freq.groupby([group_column, 'direction_bin'], observed=False)['count'].sum().reset_index(name='total')
                 freq = freq.merge(total_counts, on=['group_column', 'direction_bin'])
                 freq['value'] = (freq['count'] / freq['total']) * 100
             else:
@@ -226,7 +226,7 @@ def pollutant_rose(df, pollutant, wd_col='wd', condition_col=None,
             # Calculate overall mean pollutant
             overall_mean = data[pollutant].mean()
             # Group by and sum pollutant
-            freq = data.groupby(['direction_bin', 'pollutant_bin']).agg(
+            freq = data.groupby(['direction_bin', 'pollutant_bin'], observed=False).agg(
                 pollutant_sum=(pollutant, 'sum'),
                 count=(pollutant, 'count')
             ).reset_index()
@@ -236,7 +236,7 @@ def pollutant_rose(df, pollutant, wd_col='wd', condition_col=None,
             freq['value'] = (freq['pollutant_sum'] / freq['expected_sum']) * 100
         else:
             # Default statistics: 'count' or 'percentage'
-            freq = data.groupby(['direction_bin', 'pollutant_bin']).agg(
+            freq = data.groupby(['direction_bin', 'pollutant_bin'], observed=False).agg(
                 count=(pollutant, 'sum')  # Sum pollutant as count
             ).reset_index()
             if mode == 'percentage':

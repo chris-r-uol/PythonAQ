@@ -66,7 +66,7 @@ def polar_cluster(
     data['wd_bin'] = pd.cut(data[wd_col], bins=wd_bins_array, labels=False, include_lowest=True)
 
     # Group data by bins and compute aggregated features
-    grouped = data.groupby(['ws_bin', 'wd_bin'])
+    grouped = data.groupby(['ws_bin', 'wd_bin'], observed=False)
 
     # Create a dictionary of aggregations for feature_cols
     aggregations = {f"{col}_mean": (col, 'mean') for col in feature_cols}

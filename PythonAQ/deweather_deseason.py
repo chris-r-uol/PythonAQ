@@ -1,6 +1,5 @@
 import pandas as pd
 from statsmodels.tsa.seasonal import seasonal_decompose
-import streamlit as st
 
 def deseason_data(data, pollutant_column, interval, period, method='additive', date_column='date_time'):
     """
@@ -35,8 +34,12 @@ def deseason_data(data, pollutant_column, interval, period, method='additive', d
     resampled_df = df[[pollutant_column]].resample(interval).mean()
 
 
-    # Interpolate missing values in the pollutant column
-    resampled_df[pollutant_column].interpolate(method='linear', inplace=True)
+    # Interpolate missing values in the pollutant column.
+    # Assigning the result rather than using inplace= on the extracted Series,
+    # which is a no-op chained assignment under pandas Copy-on-Write.
+    resampled_df[pollutant_column] = resampled_df[pollutant_column].interpolate(
+        method='linear'
+    )
 
     # Check if data length is sufficient for seasonal decomposition
     required_length = 2 * period
@@ -51,7 +54,8 @@ def deseason_data(data, pollutant_column, interval, period, method='additive', d
         deseasoned = resampled_df[pollutant_column] - decomposition.seasonal
     elif method == 'multiplicative':
         deseasoned = resampled_df[pollutant_column] / decomposition.seasonal.replace(0, pd.NA)
-        deseasoned = deseasoned.fillna(method='bfill').fillna(method='ffill')
+        # .bfill()/.ffill() rather than fillna(method=...), removed in pandas 3.
+        deseasoned = deseasoned.bfill().ffill()
     else:
         raise ValueError("Method must be 'additive' or 'multiplicative'.")
 

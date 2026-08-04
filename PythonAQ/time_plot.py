@@ -3,7 +3,6 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import plotly.express as px
-import streamlit as st
 
 def calculate_arrow_positions(x, y, ws, wd, x_scale, y_scale):
     """

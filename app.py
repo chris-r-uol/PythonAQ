@@ -1,18 +1,31 @@
-import streamlit as st
-import data
-import pandas as pd
-from wind_rose import wind_rose
+"""Streamlit demo application for PythonAQ.
+
+Run from the repository root with::
+
+    streamlit run app.py
+
+Requires the optional extras: pip install -e '.[app,calendar]'
+"""
+
 from datetime import datetime
-from summary_plot import summary_plot
-from calendar_plot import calendar
-from polar_frequency import polar_frequency_plot
-from polar_plot import polar_plot
-from map_sites import map_sites
-from polar_cluster import polar_cluster
-from time_plot import time_plot
-from theil_sen_plot import theil_sen_plot
-from deweather_deseason import deseason_data
-import utilities
+
+import streamlit as st
+
+from PythonAQ import (
+    calendar,
+    deseason_data,
+    download_aurn_data,
+    get_period,
+    import_aq_meta,
+    map_sites,
+    polar_cluster,
+    polar_frequency_plot,
+    polar_plot,
+    summary_plot,
+    theil_sen_plot,
+    time_plot,
+    wind_rose,
+)
 
 def main():
     st.set_page_config(page_title='Air Quality Python Tools Demo App', layout='wide')
@@ -21,7 +34,7 @@ def main():
 
     which_source = st.selectbox('Select AQ Source', options = aq_sources)
     
-    metadata = data.import_aq_meta(which_source)
+    metadata = import_aq_meta(which_source)
     #st.dataframe(metadata)
     metadata = metadata[metadata['end_date'] == 'ongoing']
     
@@ -33,7 +46,7 @@ def main():
     with c2:
         end_year = st.number_input('End Year', min_value = 2017, max_value = current_year, value = current_year)
     
-    df = data.download_aurn_data(site, start_year, end_year, which_source)
+    df = download_aurn_data(site, start_year, end_year, which_source)
     
     
     with st.expander('Raw Data'):
@@ -50,7 +63,7 @@ def main():
     
     do_ds = st.checkbox('Check do do deseasoning', value=False)
     if do_ds:
-        df_ds = deseason_data(data=df, pollutant_column=col_ts, interval=t_ts, period=utilities.get_period(t_ts) , method='additive', date_column='date_time').reset_index()
+        df_ds = deseason_data(data=df, pollutant_column=col_ts, interval=t_ts, period=get_period(t_ts) , method='additive', date_column='date_time').reset_index()
         fig = theil_sen_plot(df, pollutant_col=col_ts, agg_freq=t_ts, deseason_data=df_ds)
     else:
         fig = theil_sen_plot(df, pollutant_col=col_ts, agg_freq=t_ts)

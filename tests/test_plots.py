@@ -5,6 +5,7 @@ Plotly figure with actual traces. They are deliberately not pixel comparisons;
 the goal is to catch import errors, pandas deprecations and shape bugs.
 """
 
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import pytest
@@ -51,9 +52,13 @@ class TestWindRose:
         with pytest.raises(ValueError, match='Invalid group_by'):
             wind_rose(aq_df, group_by='nonsense')
 
-    def test_does_not_mutate_input(self, aq_df):
+    @pytest.mark.parametrize('group_by', ['none', 'year', 'quartile'])
+    def test_does_not_mutate_input(self, aq_df, group_by):
+        """Regression: the year and quartile branches wrote grouping columns
+        back into the caller's DataFrame. Only 'none' was covered before, which
+        is the one path that never writes."""
         before = aq_df.copy()
-        wind_rose(aq_df, group_by='none')
+        wind_rose(aq_df, group_by=group_by, quartile_col='NO2')
         pd.testing.assert_frame_equal(aq_df, before)
 
 
@@ -67,6 +72,75 @@ class TestPollutantRose:
 class TestPolarPlots:
     def test_polar_plot(self, aq_df):
         assert_is_populated_figure(polar_plot(aq_df, conc_col='NO2'))
+
+    def test_default_render_is_a_continuous_surface(self, aq_df):
+        """The default must be one raster trace, not thousands of polygons.
+
+        Drawing a flat-filled polygon per bin is what made the output look
+        blocky regardless of how smooth the underlying GAM was.
+        """
+        fig = polar_plot(aq_df, conc_col='NO2')
+        assert len(fig.data) == 1
+        assert fig.data[0].type == 'heatmap'
+        assert fig.data[0].zsmooth == 'best'
+
+    @pytest.mark.parametrize('render,expected_type', [
+        ('raster', 'heatmap'), ('contour', 'contour'),
+    ])
+    def test_render_modes(self, aq_df, render, expected_type):
+        fig = polar_plot(aq_df, conc_col='NO2', render=render)
+        assert fig.data[0].type == expected_type
+
+    def test_tile_render_still_available(self, aq_df):
+        """The original rendering is kept for backwards compatibility."""
+        fig = polar_plot(aq_df, conc_col='NO2', render='tile')
+        assert len(fig.layout.shapes) > 100
+
+    def test_invalid_render_raises(self, aq_df):
+        with pytest.raises(ValueError, match='render must be'):
+            polar_plot(aq_df, conc_col='NO2', render='nonsense')
+
+    def test_higher_resolution_gives_a_finer_grid(self, aq_df):
+        coarse = polar_plot(aq_df, conc_col='NO2', resolution=60)
+        fine = polar_plot(aq_df, conc_col='NO2', resolution=150)
+        assert np.asarray(fine.data[0].z).shape > np.asarray(coarse.data[0].z).shape
+
+    def test_surface_is_masked_outside_the_wind_speed_limit(self, aq_df):
+        """Corners of the square grid fall outside the circle and must be blank."""
+        z = np.asarray(polar_plot(aq_df, conc_col='NO2').data[0].z, dtype=float)
+        assert np.isnan(z[0, 0]) and np.isnan(z[-1, -1])
+        assert np.isfinite(z).any()
+
+    def test_compass_labels_are_inside_the_axis_range(self, aq_df):
+        """Regression: labels sat beyond the axis range and were clipped."""
+        fig = polar_plot(aq_df, conc_col='NO2')
+        limit = fig.layout.xaxis.range[1]
+        labels = {a.text.strip('<b>/'): (a.x, a.y)
+                  for a in fig.layout.annotations if a.text and 'b>' in a.text}
+        assert {'N', 'E', 'S', 'W'} <= set(labels)
+        for name, (x, y) in labels.items():
+            assert max(abs(x), abs(y)) <= limit, f'{name} label is clipped'
+
+    def test_ws_limit_controls_the_radial_extent(self, aq_df):
+        auto = polar_plot(aq_df, conc_col='NO2', ws_limit='auto')
+        full = polar_plot(aq_df, conc_col='NO2', ws_limit='max')
+        assert full.layout.xaxis.range[1] >= auto.layout.xaxis.range[1]
+
+    def test_exclude_missing_blanks_an_empty_sector(self, aq_df):
+        """With no easterly winds at all, the eastern side must stay blank."""
+        no_easterlies = aq_df[(aq_df['wd'] < 45) | (aq_df['wd'] > 135)]
+        z = np.asarray(
+            polar_plot(no_easterlies, conc_col='NO2', exclude_missing=True).data[0].z,
+            dtype=float,
+        )
+        mid = z.shape[0] // 2
+        # Due east is the right-hand edge of the middle row, just inside the rim
+        east = z[mid, int(z.shape[1] * 0.85)]
+        assert np.isnan(east)
+
+    def test_too_few_populated_bins_raises_clearly(self, aq_df):
+        with pytest.raises(ValueError, match='too few to fit a surface'):
+            polar_plot(aq_df.head(12), conc_col='NO2', min_count=5)
 
     @pytest.mark.parametrize('separate_by_year', [True, False])
     def test_polar_frequency(self, aq_df, separate_by_year):

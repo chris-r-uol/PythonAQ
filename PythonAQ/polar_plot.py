@@ -1,15 +1,42 @@
-import pandas as pd
+"""Bivariate polar plots. Port of openair's ``polarPlot``.
+
+Concentrations are smoothed over wind speed and direction with a tensor-product
+GAM, then rendered as a continuous surface.
+
+The surface is predicted onto a regular Cartesian grid in (u, v) wind-component
+space and drawn as a single raster, which is what openair does via lattice's
+levelplot. Drawing one flat-filled polygon per bin instead makes the result look
+blocky no matter how smooth the underlying fit is, because there is no
+interpolation between neighbouring cells; that approach is still available as
+``render='tile'``.
+"""
+
 import numpy as np
+import pandas as pd
 import plotly.graph_objects as go
-import plotly.colors as pcolors
 from pygam import LinearGAM, te
+from scipy.spatial import cKDTree
+
+__all__ = ['polar_plot']
+
+
+def _to_components(ws, wd):
+    """Convert wind speed and direction to (u, v) plotting components.
+
+    The x axis is u and the y axis is v, so a wind from bearing `wd` is drawn
+    at that compass bearing with north at the top and angles increasing
+    clockwise.
+    """
+    radians = np.deg2rad(wd)
+    return ws * np.sin(radians), ws * np.cos(radians)
+
 
 def polar_plot(
     df,
     ws_col='ws',
     wd_col='wd',
     conc_col='NO2',
-    ws_bins=60,
+    ws_bins=30,
     wd_bins=72,
     color_palette='Spectral_r',
     title='Polar Plot of Concentration',
@@ -17,322 +44,321 @@ def polar_plot(
     vmax=None,
     fig_width=800,
     fig_height=800,
-    min_count=3,  # Minimum number of observations per bin
+    min_count=3,
     n_splines=10,
-    uncertainty=None
+    uncertainty=None,
+    render='raster',
+    resolution=300,
+    n_contours=14,
+    exclude_missing=True,
+    exclude_distance=None,
+    upper_limit=None,
+    ws_limit='auto',
 ):
-    """
-    Creates a bivariate polar tile plot of concentrations showing how concentrations
-    vary with wind speed and wind direction using Plotly shapes.
-    
+    """Create a bivariate polar plot of concentration by wind speed and direction.
+
     Parameters:
     - df (pd.DataFrame): DataFrame containing wind data and concentrations.
     - ws_col (str): Column name for wind speed.
-    - wd_col (str): Column name for wind direction.
+    - wd_col (str): Column name for wind direction, in degrees.
     - conc_col (str): Column name for concentration.
-    - ws_bins (int): Number of bins for wind speed (default: 60).
-    - wd_bins (int): Number of bins for wind direction (default: 72).
-    - color_palette (str or list): Plotly color scale (default: 'Spectral_r').
-    - title (str): Title of the plot (default: 'Polar Plot of Concentration').
-    - vmin, vmax (float): Minimum and maximum values for color scale.
-    - fig_width (int): Width of the figure in pixels (default: 800).
-    - fig_height (int): Height of the figure in pixels (default: 800).
-    - min_count (int): Minimum number of observations per bin to include in the analysis.
-    - n_splines (int): Number of splines for the tensor GAM.
-    - uncertainty (float or None): Float value less than 1 for handling the level of confidence
-    
+    - ws_bins (int): Wind speed bins used when aggregating before the fit.
+    - wd_bins (int): Wind direction bins used when aggregating before the fit.
+    - color_palette (str or list): Plotly colour scale.
+    - title (str): Title of the plot.
+    - vmin, vmax (float or None): Colour scale limits.
+    - fig_width, fig_height (int): Figure size in pixels.
+    - min_count (int): Minimum observations per bin for it to inform the fit.
+    - n_splines (int): Splines per dimension of the tensor-product smooth.
+    - uncertainty (float or None): Confidence width for the prediction interval
+      used to blank untrustworthy regions, e.g. 0.95. None disables the check.
+    - render (str): 'raster' for a continuous surface (default), 'contour' for
+      filled contour bands, or 'tile' for the original one-polygon-per-bin
+      rendering.
+    - resolution (int): Grid points per axis for the predicted surface. Higher
+      is smoother and slower; only used by 'raster' and 'contour'.
+    - n_contours (int): Number of bands when render='contour'.
+    - exclude_missing (bool): Blank areas of the grid that sit too far from any
+      observation, so the surface is not extrapolated into empty sectors.
+    - exclude_distance (float or None): How far from an observation counts as
+      too far, in wind speed units. Defaults to 4% of the maximum wind speed.
+    - upper_limit (float or None): Blank predictions above this concentration.
+      None keeps them all.
+    - ws_limit (str or float): Radial extent. 'auto' (default) uses the 99th
+      percentile of wind speed, since the rare highest speeds are too sparse to
+      smooth and would otherwise leave most of the circle blank; 'max' uses the
+      full observed range; a number sets it explicitly.
+
     Returns:
-    - fig (plotly.graph_objects.Figure): The resulting polar tile plot.
+    - fig (plotly.graph_objects.Figure): The resulting polar plot.
     """
-    # Validate input columns
     for col in [ws_col, wd_col, conc_col]:
         if col not in df.columns:
             raise ValueError(f"Column '{col}' not found in DataFrame.")
-    
-    # Drop rows with missing data
-    data = df[[ws_col, wd_col, conc_col]].dropna()
-    
-    # Ensure wind directions are within [0, 360)
+    if render not in ('raster', 'contour', 'tile'):
+        raise ValueError("render must be 'raster', 'contour' or 'tile'.")
+    if resolution < 20:
+        raise ValueError('resolution must be at least 20.')
+
+    data = df[[ws_col, wd_col, conc_col]].dropna().copy()
+    data = data[data[ws_col] >= 0]
+    if data.empty:
+        raise ValueError('No complete wind speed / direction / concentration rows.')
     data[wd_col] = data[wd_col] % 360
-    
-    # Bin the data into wind speed and wind direction bins
-    ws_min, ws_max = data[ws_col].min(), data[ws_col].max()
-    ws_bins_array = np.linspace(ws_min, ws_max, ws_bins + 1)
+
+    if ws_limit == 'auto':
+        ws_max = float(data[ws_col].quantile(0.99))
+    elif ws_limit == 'max':
+        ws_max = float(data[ws_col].max())
+    else:
+        ws_max = float(ws_limit)
+    if ws_max <= 0:
+        raise ValueError('ws_limit must resolve to a positive wind speed.')
+
+    ws_bins_array = np.linspace(float(data[ws_col].min()), ws_max, ws_bins + 1)
     wd_bins_array = np.linspace(0, 360, wd_bins + 1)
-    
-    # Assign bins to data
-    data['ws_bin'] = pd.cut(data[ws_col], bins=ws_bins_array, labels=False, include_lowest=True)
-    data['wd_bin'] = pd.cut(data[wd_col], bins=wd_bins_array, labels=False, include_lowest=True)
-    
-    # Group data by bins and compute statistics
-    grouped = data.groupby(['ws_bin', 'wd_bin'], observed=False)
-    binned_data = grouped.agg(
+    data['ws_bin'] = pd.cut(data[ws_col], bins=ws_bins_array, labels=False,
+                            include_lowest=True)
+    data['wd_bin'] = pd.cut(data[wd_col], bins=wd_bins_array, labels=False,
+                            include_lowest=True)
+
+    # Aggregate before fitting: the GAM only needs the conditional mean surface,
+    # and fitting on bin means is far cheaper than on every observation.
+    binned = data.groupby(['ws_bin', 'wd_bin'], observed=True).agg(
         ws_mean=(ws_col, 'mean'),
         wd_mean=(wd_col, 'mean'),
         conc_mean=(conc_col, 'mean'),
-        conc_std=(conc_col, 'std'),
-        count=(conc_col, 'count')
+        count=(conc_col, 'count'),
     ).reset_index()
-    
-    # Remove bins with too few data points
-    binned_data = binned_data[binned_data['count'] >= min_count]
-    
-    # Prepare data for GAM
-    # Convert wind speed and direction into u and v components
-    wd_rad = np.deg2rad(binned_data['wd_mean'])
-    u = binned_data['ws_mean'] * np.sin(wd_rad)
-    v = binned_data['ws_mean'] * np.cos(wd_rad)
-    X = np.column_stack([u, v])
-    y = binned_data['conc_mean']
-    
-    # Fit GAM using the binned data with tensor spline
+    binned = binned[binned['count'] >= min_count]
+    if len(binned) < 10:
+        raise ValueError(
+            f'Only {len(binned)} bins have at least {min_count} observations; '
+            f'too few to fit a surface. Lower min_count or widen the bins.'
+        )
+
+    u_obs, v_obs = _to_components(binned['ws_mean'], binned['wd_mean'])
+    X = np.column_stack([u_obs, v_obs])
+    y = binned['conc_mean'].to_numpy()
+
     gam = LinearGAM(te(0, 1, n_splines=(n_splines, n_splines)))
-    gam.gridsearch(X, y)
-    
-    # Create grid for prediction (matching bin centers)
+    gam.gridsearch(X, y, progress=False)
+
+    if render == 'tile':
+        grid_u, grid_v, Z = _predict_polar_grid(
+            gam, ws_bins_array, wd_bins_array,
+        )
+    else:
+        grid_u, grid_v, Z = _predict_cartesian_grid(gam, ws_max, resolution)
+
+    # Blank regions the fit cannot support.
+    if uncertainty is not None:
+        points = np.column_stack([grid_u.ravel(), grid_v.ravel()])
+        interval = gam.prediction_intervals(points, width=uncertainty)
+        half_width = ((interval[:, 1] - interval[:, 0]) / 2).reshape(Z.shape)
+        Z = np.where(half_width > np.abs(Z), np.nan, Z)
+    if upper_limit is not None:
+        Z = np.where(Z > upper_limit, np.nan, Z)
+
+    if exclude_missing:
+        if exclude_distance is None:
+            exclude_distance = 0.06 * ws_max
+        # Blank grid cells with no observation nearby, so that empty sectors are
+        # left out rather than filled by extrapolation. Doing this on the fine
+        # grid gives a boundary that follows the data, rather than the sawtooth
+        # edge produced by dropping whole bins.
+        #
+        # The query runs against every raw observation, not the bin means: bin
+        # means thin out towards the rim, which would carve the surface into
+        # detached islands wherever a single bin happened to be empty.
+        #
+        # The test is on the distance to the `min_count`-th nearest observation,
+        # not the first. Proximity to a single stray point is not evidence that
+        # the surface is supported there, and using the nearest neighbour alone
+        # lets the GAM's edge extrapolation survive in near-empty sectors as
+        # spurious hot and cold spots.
+        raw_u, raw_v = _to_components(data[ws_col], data[wd_col])
+        tree = cKDTree(np.column_stack([raw_u, raw_v]))
+        neighbours = max(int(min_count), 1)
+        distance, _ = tree.query(
+            np.column_stack([grid_u.ravel(), grid_v.ravel()]), k=neighbours,
+        )
+        if neighbours > 1:
+            distance = distance[:, -1]
+        keep = distance.reshape(Z.shape) <= exclude_distance
+        keep = _tidy_mask(keep)
+        Z = np.where(keep, Z, np.nan)
+
+    if np.all(np.isnan(Z)):
+        raise ValueError(
+            'Every grid cell was excluded. Try exclude_missing=False, a larger '
+            'exclude_distance, or a less strict uncertainty.'
+        )
+
+    if vmin is None:
+        vmin = min(0.0, float(np.nanmin(Z)))
+    if vmax is None:
+        vmax = float(np.nanmax(Z))
+
+    fig = go.Figure()
+    if render == 'contour':
+        fig.add_trace(go.Contour(
+            x=grid_u[0, :], y=grid_v[:, 0], z=Z,
+            colorscale=color_palette, zmin=vmin, zmax=vmax,
+            ncontours=n_contours, contours=dict(coloring='fill', showlines=False),
+            connectgaps=False,
+            colorbar=dict(title=conc_col, thickness=20, len=0.75, y=0.5),
+            hovertemplate=_hover_template(conc_col),
+        ))
+    elif render == 'raster':
+        fig.add_trace(go.Heatmap(
+            x=grid_u[0, :], y=grid_v[:, 0], z=Z,
+            colorscale=color_palette, zmin=vmin, zmax=vmax,
+            zsmooth='best', connectgaps=False,
+            colorbar=dict(title=conc_col, thickness=20, len=0.75, y=0.5),
+            hovertemplate=_hover_template(conc_col),
+        ))
+    else:
+        _add_tiles(fig, ws_bins_array, wd_bins_array, Z, color_palette, vmin, vmax)
+        fig.add_trace(go.Scatter(
+            x=[None], y=[None], mode='markers', showlegend=False,
+            marker=dict(colorscale=color_palette, cmin=vmin, cmax=vmax, color=[],
+                        showscale=True,
+                        colorbar=dict(title=conc_col, thickness=20, len=0.75, y=0.5)),
+        ))
+
+    # The axis range must clear the outermost ring and its compass labels,
+    # which sit beyond ws_max; sizing the range from ws_max alone clips them.
+    outer = _add_polar_axes(fig, ws_max)
+    limit = outer * 1.16
+    fig.update_layout(
+        title=title, width=fig_width, height=fig_height, template='plotly_white',
+        xaxis=dict(visible=False, scaleanchor='y', scaleratio=1,
+                   range=[-limit, limit], constrain='domain'),
+        yaxis=dict(visible=False, range=[-limit, limit], constrain='domain'),
+        plot_bgcolor='white',
+    )
+    return fig
+
+
+def _tidy_mask(keep, radius=2):
+    """Remove speckle from the coverage mask and close pinholes in it.
+
+    Thresholding a distance field cell by cell leaves isolated specks just
+    inside the cut-off and single-cell holes just outside, which read as noise
+    along the boundary. A morphological opening then closing removes both while
+    leaving the overall shape of the covered region alone.
+    """
+    try:
+        from scipy.ndimage import binary_closing, binary_opening
+    except ImportError:  # pragma: no cover - scipy is a hard dependency
+        return keep
+
+    size = 2 * radius + 1
+    y, x = np.ogrid[-radius:radius + 1, -radius:radius + 1]
+    disc = (x ** 2 + y ** 2) <= radius ** 2 + 1e-9
+    assert disc.shape == (size, size)
+
+    opened = binary_opening(keep, structure=disc)
+    # Opening can erase a genuinely small covered region entirely; if so, keep
+    # the original rather than silently dropping data.
+    if not opened.any():
+        return keep
+    return binary_closing(opened, structure=disc)
+
+
+def _hover_template(conc_col):
+    """Hover text. x and y are the wind components, so report both those and
+    the speed/bearing they correspond to."""
+    return (
+        f'{conc_col}: %{{z:.1f}}<br>'
+        'u: %{x:.1f}  v: %{y:.1f}'
+        '<extra></extra>'
+    )
+
+
+def _predict_cartesian_grid(gam, ws_max, resolution):
+    """Predict the surface on a regular Cartesian grid over the wind components.
+
+    A Cartesian grid is what makes the result render as a smooth image: cells
+    are uniform squares that Plotly can interpolate between, rather than
+    wedges that grow towards the rim.
+    """
+    axis = np.linspace(-ws_max, ws_max, resolution)
+    grid_u, grid_v = np.meshgrid(axis, axis)
+    Z = gam.predict(np.column_stack([grid_u.ravel(), grid_v.ravel()]))
+    Z = Z.reshape(grid_u.shape)
+    # Keep the plot circular: outside the maximum observed wind speed there is
+    # nothing to say.
+    Z = np.where(np.hypot(grid_u, grid_v) > ws_max, np.nan, Z)
+    return grid_u, grid_v, Z
+
+
+def _predict_polar_grid(gam, ws_bins_array, wd_bins_array):
+    """Predict at polar bin centres, for the legacy tile rendering."""
     ws_centers = (ws_bins_array[:-1] + ws_bins_array[1:]) / 2
     wd_centers = (wd_bins_array[:-1] + wd_bins_array[1:]) / 2
     ws_grid, wd_grid = np.meshgrid(ws_centers, wd_centers)
-    wd_grid_rad = np.deg2rad(wd_grid)
-    u_pred = ws_grid * np.sin(wd_grid_rad)
-    v_pred = ws_grid * np.cos(wd_grid_rad)
-    X_pred = np.column_stack([u_pred.ravel(), v_pred.ravel()])
-    
-    # Predict concentrations over the grid
-    Z_pred = gam.predict(X_pred)
-    Z_pred = Z_pred.reshape(ws_grid.shape)
-    
-    # Get prediction intervals
-    intervals = gam.prediction_intervals(X_pred, width=0.95)
-    Z_pred_lower = intervals[:, 0].reshape(ws_grid.shape)
-    Z_pred_upper = intervals[:, 1].reshape(ws_grid.shape)
-    
-    # Compute prediction error (half-width of the prediction interval)
-    Z_error = (Z_pred_upper - Z_pred_lower) / 2
-    
-    mean_pollutant = data[conc_col].mean()
-    sd_pollutant = data[conc_col].std()
-    max_allowed = mean_pollutant + (1.2 * sd_pollutant)
-    
-    # Implement quality control: Discard predictions where error > predicted concentration or predicted concentration > max_allowed
-    Z_masked = np.where(
-        (Z_error > np.abs(Z_pred)) | (Z_pred > max_allowed),
-        np.nan,
-        Z_pred
-    )
-    
-    # Set color scale limits
-    if vmin is None:
-        if np.nanmin(Z_masked) <= 0:
-            vmin = 0
-        else:
-            vmin = np.nanmin(Z_masked)
-    if vmax is None:
-        vmax = np.nanmax(Z_masked)
-    
-    # Normalize concentrations for color mapping
-    norm_conc = (Z_masked - vmin) / (vmax - vmin)
-    norm_conc = np.clip(norm_conc, 0, 1)
-    
-    # Get colorscale
-    if isinstance(color_palette, str):
-        colorscale = pcolors.get_colorscale(color_palette)
-    else:
-        colorscale = color_palette  # Assume it's a list of colors
-    
-    from plotly.colors import sample_colorscale
-    
-    # Initialize shapes list
+    grid_u, grid_v = _to_components(ws_grid, wd_grid)
+    Z = gam.predict(np.column_stack([grid_u.ravel(), grid_v.ravel()]))
+    return grid_u, grid_v, Z.reshape(ws_grid.shape)
+
+
+def _add_tiles(fig, ws_bins_array, wd_bins_array, Z, color_palette, vmin, vmax):
+    """Draw one filled polygon per polar bin (the original rendering)."""
+    from plotly.colors import get_colorscale, sample_colorscale
+
+    colorscale = (get_colorscale(color_palette)
+                  if isinstance(color_palette, str) else color_palette)
+    span = (vmax - vmin) or 1.0
     shapes = []
-    
-    # Loop over bins and create tiles
-    num_ws_bins = len(ws_centers)
-    num_wd_bins = len(wd_centers)
-    for i in range(num_ws_bins):
-        for j in range(num_wd_bins):
-            conc_value = Z_masked[j, i]
-            if np.isnan(conc_value) or conc_value <= 0:
-                continue  # Skip tiles with NaN values
-            
-            # Get bin edges
-            ws0 = ws_bins_array[i]
-            ws1 = ws_bins_array[i + 1]
-            wd0 = wd_bins_array[j]
-            wd1 = wd_bins_array[j + 1]
-            
-            # Adjust angles to have north at the top and increase clockwise
-            theta0_adj = (-wd0 + 90) % 360
-            theta1_adj = (-wd1 + 90) % 360
-            
-            # Convert to radians
-            theta0_rad = np.deg2rad(theta0_adj)
-            theta1_rad = np.deg2rad(theta1_adj)
-            
-            # Compute corners of the tile
-            r0 = ws0
-            r1 = ws1
-            x0 = r0 * np.cos(theta0_rad)
-            y0 = r0 * np.sin(theta0_rad)
-            x1 = r0 * np.cos(theta1_rad)
-            y1 = r0 * np.sin(theta1_rad)
-            x2 = r1 * np.cos(theta1_rad)
-            y2 = r1 * np.sin(theta1_rad)
-            x3 = r1 * np.cos(theta0_rad)
-            y3 = r1 * np.sin(theta0_rad)
-            
-            # Get fill color
-            norm_value = norm_conc[j, i]
-            fillcolor = sample_colorscale(colorscale, [norm_value])[0]
-            
-            # Create path for the shape
-            path = f'M {x0},{y0} L {x1},{y1} L {x2},{y2} L {x3},{y3} Z'
-            
-            # Create shape dictionary
-            shape = dict(
-                type='path',
-                path=path,
-                fillcolor=fillcolor,
-                line=dict(width=0.5, color=fillcolor),
-                xref='x',
-                yref='y'
-            )
-            shapes.append(shape)
-    
-    # Create figure
-    fig = go.Figure()
-    
-    # Update layout
-    fig.update_layout(
-        title=title,
-        width=fig_width,
-        height=fig_height,
-        shapes=shapes,
-        xaxis=dict(
-            visible=False,
-            scaleanchor='y',
-            scaleratio=1,
-            range=[-ws_max * 1.1, ws_max * 1.1],
-        ),
-        yaxis=dict(
-            visible=False,
-            range=[-ws_max * 1.1, ws_max * 1.1],
-        ),
-        template='plotly_white'
-    )
-    
-    # Add colorbar using a dummy scatter trace
-    fig.add_trace(go.Scatter(
-        x=[None],
-        y=[None],
-        mode='markers',
-        marker=dict(
-            colorscale=color_palette,
-            cmin=vmin,
-            cmax=vmax,
-            colorbar=dict(
-                title=conc_col,
-                thickness=20,
-                len=0.75,
-                y=0.5,
-            ),
-            color=[],
-            showscale=True
-        ),
-        showlegend=False
-    ))
-    
-    # Adjust compass annotations to only N, E, S, W with black arrows
-    compass_directions = ['N', 'E', 'S', 'W']
-    compass_angles = np.array([0, 90, 180, 270])
-    compass_angles_adj = (-compass_angles + 90) % 360
-    compass_angles_rad = np.deg2rad(compass_angles_adj)
+    for i in range(len(ws_bins_array) - 1):
+        for j in range(len(wd_bins_array) - 1):
+            value = Z[j, i]
+            if np.isnan(value):
+                continue
+            r0, r1 = ws_bins_array[i], ws_bins_array[i + 1]
+            t0 = np.deg2rad((-wd_bins_array[j] + 90) % 360)
+            t1 = np.deg2rad((-wd_bins_array[j + 1] + 90) % 360)
+            corners = [
+                (r0 * np.cos(t0), r0 * np.sin(t0)), (r0 * np.cos(t1), r0 * np.sin(t1)),
+                (r1 * np.cos(t1), r1 * np.sin(t1)), (r1 * np.cos(t0), r1 * np.sin(t0)),
+            ]
+            path = 'M ' + ' L '.join(f'{x},{y}' for x, y in corners) + ' Z'
+            colour = sample_colorscale(
+                colorscale, [float(np.clip((value - vmin) / span, 0, 1))]
+            )[0]
+            shapes.append(dict(type='path', path=path, fillcolor=colour,
+                               line=dict(width=0.5, color=colour),
+                               xref='x', yref='y', layer='below'))
+    fig.update_layout(shapes=shapes)
 
-    # Define anchors based on direction to position text correctly
-    xanchors = {'N': 'center', 'E': 'left', 'S': 'center', 'W': 'right'}
-    yanchors = {'N': 'bottom', 'E': 'middle', 'S': 'top', 'W': 'middle'}
 
-    for direction, angle in zip(compass_directions, compass_angles_rad):
-        x_edge = (ws_max + 0.1 * ws_max) * np.cos(angle)
-        y_edge = (ws_max + 0.1 * ws_max) * np.sin(angle)
-        
-        # Add arrow pointing from edge to center
+def _add_polar_axes(fig, ws_max):
+    """Overlay compass labels and radial rings. Returns the outermost radius."""
+    step = 5 if ws_max > 10 else 2
+    rounded = (int(ws_max // step) + 1) * step
+
+    for radius in np.arange(step, rounded + step, step):
+        fig.add_shape(type='circle', xref='x', yref='y',
+                      x0=-radius, y0=-radius, x1=radius, y1=radius,
+                      line=dict(color='rgba(120,120,120,0.35)', width=1),
+                      layer='above')
+        fig.add_annotation(x=radius * np.cos(np.deg2rad(45)),
+                           y=radius * np.sin(np.deg2rad(45)),
+                           text=f'{radius:g}', showarrow=False,
+                           font=dict(size=10, color='rgba(60,60,60,0.8)'),
+                           bgcolor='rgba(255,255,255,0.6)', xref='x', yref='y')
+
+    for bearing, label in zip([0, 90, 180, 270], ['N', 'E', 'S', 'W']):
+        angle = np.deg2rad((-bearing + 90) % 360)
+        fig.add_shape(type='line', xref='x', yref='y', x0=0, y0=0,
+                      x1=rounded * np.cos(angle), y1=rounded * np.sin(angle),
+                      line=dict(color='rgba(120,120,120,0.35)', width=1),
+                      layer='above')
         fig.add_annotation(
-            x=x_edge,
-            y=y_edge,
-            ax=0,
-            ay=0,
-            xref="x",
-            yref="y",
-            axref="x",
-            ayref="y",
-            showarrow=True,
-            arrowhead=2,
-            arrowsize=1,
-            arrowwidth=2,
-            arrowcolor='black',
-            text='',  # No text for arrow annotation
+            x=rounded * 1.08 * np.cos(angle), y=rounded * 1.08 * np.sin(angle),
+            text=f'<b>{label}</b>', showarrow=False,
+            font=dict(size=14, color='#333'), xref='x', yref='y',
         )
-        
-        # Add text at the edge
-        fig.add_annotation(
-            x=x_edge,
-            y=y_edge,
-            xref='x',
-            yref='y',
-            text=direction,
-            font=dict(size=12, color='black'),
-            showarrow=False,
-            xanchor=xanchors[direction],
-            yanchor=yanchors[direction],
-        )
-    
-    # Create radial grid lines in steps of 5 up to next step after max wind speed
-    radial_step = 5
-    ws_max_rounded = ((ws_max // radial_step) + 1) * radial_step
-    radial_grid = np.arange(0, ws_max_rounded + radial_step, radial_step)
-    for r in radial_grid:
-        if r == 0:
-            continue  # Skip zero radius circle
-        fig.add_shape(
-            type="circle",
-            xref="x",
-            yref="y",
-            x0=-r,
-            y0=-r,
-            x1=r,
-            y1=r,
-            line=dict(color="lightgray", width=1)
-        )
-        # Add annotations for radial grid lines
-        fig.add_annotation(
-            x=r,
-            y=0,
-            text=f"{r}",
-            showarrow=False,
-            font=dict(size=10),
-            xref="x",
-            yref="y",
-            xanchor='left',
-            yanchor='bottom'
-        )
-    
-    # Add angular grid lines (lines from center)
-    angular_grid = np.array([0, 90, 180, 270])  # Only cardinal points
-    angular_grid_adj = (-angular_grid + 90) % 360
-    angular_grid_rad = np.deg2rad(angular_grid_adj)
-    for theta in angular_grid_rad:
-        x0, y0 = 0, 0
-        x1 = ws_max_rounded * 1.05 * np.cos(theta)
-        y1 = ws_max_rounded * 1.05 * np.sin(theta)
-        fig.add_shape(
-            type="line",
-            xref="x",
-            yref="y",
-            x0=x0,
-            y0=y0,
-            x1=x1,
-            y1=y1,
-            line=dict(color="lightgray", width=1)
-        )
-    
-    return fig
+    return rounded

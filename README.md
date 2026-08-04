@@ -308,7 +308,8 @@ fig.show()
 - `go.Figure`: Polar frequency plot.
 
 #### polar_plot
-Generates a polar plot of pollutant concentrations varying with wind speed and direction.
+Generates a polar plot of pollutant concentrations varying with wind speed and
+direction, smoothed with a tensor-product GAM.
 
 ```python
 from PythonAQ import polar_plot
@@ -319,9 +320,31 @@ fig.show()
 **Parameters:**
 - `df` (pd.DataFrame): Data containing wind and concentration data.
 - `conc_col` (str): Column name for concentration.
+- `render` (str): `'raster'` (default) draws one continuous surface,
+  `'contour'` draws filled contour bands, `'tile'` is the original
+  one-polygon-per-bin rendering.
+- `resolution` (int): Grid points per axis for the predicted surface, default
+  300. Higher is smoother and slower.
+- `ws_limit` (str or float): Radial extent. `'auto'` (default) uses the 99th
+  percentile of wind speed, `'max'` the full observed range, or give a number.
+- `min_count` (int): Minimum observations per bin, and the local density
+  required for a grid cell to be drawn.
+- `exclude_missing` (bool), `exclude_distance` (float or None): Blank areas of
+  the grid too far from any observation, rather than extrapolating into empty
+  sectors.
+- `uncertainty` (float or None): Confidence width, e.g. `0.95`, for blanking
+  regions where the prediction interval is wider than the prediction itself.
+- `upper_limit` (float or None): Blank predictions above this concentration.
 
 **Returns:**
 - `go.Figure`: Polar plot of concentration.
+
+> **On smoothness:** the surface is predicted onto a regular Cartesian grid in
+> wind-component space and drawn as a single interpolated raster, which is what
+> openair does via lattice's `levelplot`. Drawing one flat-filled polygon per
+> bin — the old behaviour, still available as `render='tile'` — looks blocky
+> however smooth the underlying fit is, because nothing interpolates between
+> neighbouring cells.
 
 #### pollutant_rose
 Creates a pollutant rose plot displaying pollutant concentrations by wind direction.

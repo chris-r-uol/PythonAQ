@@ -1,0 +1,69 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "PythonAQ"
+version = "0.2.0"
+description = "Air quality data processing and visualisation toolkit"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+authors = [{ name = "Chris Rushton", email = "c.e.rushton@leeds.ac.uk" }]
+keywords = ["air quality", "openair", "AURN", "NOAA", "atmospheric science"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Atmospheric Science",
+]
+
+dependencies = [
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "plotly>=5.15",
+    "scipy>=1.10",
+    "requests>=2.28",
+    "rdata>=0.11",
+    "scikit-learn>=1.3",
+    "statsmodels>=0.14",
+    "pymannkendall>=1.4",
+    "pygam>=0.9",
+]
+
+[project.optional-dependencies]
+# Needed by PythonAQ.calendar only. plotly-calplot pins numpy<2 and plotly<6,
+# and its calplot() uses a .dt accessor pattern that pandas 3 rejects, so it is
+# kept out of the core dependency set to avoid capping the rest of the package.
+calendar = ["plotly-calplot>=0.1.20", "pandas<3"]
+# The Streamlit demo application (app.py) only.
+app = ["streamlit>=1.30"]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "flake8>=6.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/chris-r-uol/PythonAQ"
+Repository = "https://github.com/chris-r-uol/PythonAQ"
+Issues = "https://github.com/chris-r-uol/PythonAQ/issues"
+
+[tool.setuptools.packages.find]
+include = ["PythonAQ*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = [
+    "error::SyntaxWarning",
+]
+
+[tool.flake8]
+max-line-length = 127
+max-complexity = 15

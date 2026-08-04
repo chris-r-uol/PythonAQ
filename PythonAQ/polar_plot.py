@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import plotly.colors as pcolors
-from pygam import LinearGAM, s, te
+from pygam import LinearGAM, te
 
 def polar_plot(
     df,

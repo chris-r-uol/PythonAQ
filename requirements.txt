@@ -1,9 +1,18 @@
-numpy==1.26.0
-pandas==2.2.2
-plotly==5.22.0
-pygam==0.9.1
-requests==2.31.0
-rdata==0.11.2
-scikit-learn==1.5.1
-scipy==1.11.3
-streamlit==1.38.0
+# Runtime dependencies. The authoritative list lives in pyproject.toml -
+# prefer `pip install -e .` over installing this file directly.
+#
+# Optional extras (not listed here):
+#   pip install 'PythonAQ[calendar]'  # calendar plot (plotly-calplot, needs pandas<3)
+#   pip install 'PythonAQ[app]'       # Streamlit demo application
+#   pip install 'PythonAQ[dev]'       # test and lint tooling
+
+numpy>=1.24
+pandas>=2.0
+plotly>=5.15
+scipy>=1.10
+requests>=2.28
+rdata>=0.11
+scikit-learn>=1.3
+statsmodels>=0.14
+pymannkendall>=1.4
+pygam>=0.9

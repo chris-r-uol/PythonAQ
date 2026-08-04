@@ -6,10 +6,8 @@ import numpy as np
 
 from io import BytesIO, StringIO
 #from datetime import datetime
-from utilities import rh
+from .utilities import rh
 
-# Packages for testing
-import streamlit as st
 
 def get_r_data(url):
     """
@@ -272,48 +270,45 @@ def parse_noaa_data(data: pd.DataFrame) -> pd.DataFrame:
         - 'dew_point'
         - 'atmospheric_pressure'
     """
-    #st.write('DaTA')
-    #st.write(data)
-    site_id = str(data['STATION'][0]).replace('99999', '-99999')
-    #st.write(site_id)
+    if data.empty:
+        logging.warning("parse_noaa_data received an empty DataFrame.")
+        return pd.DataFrame()
+
+    site_id = str(data['STATION'].iloc[0]).replace('99999', '-99999')
     try:
         # Initialize a dictionary to hold processed data
         processed_data = {}
 
-        # Process 'DEW' column if present
+        def _field(column, index, missing, scale=1.0):
+            """Extract one comma-separated ISD sub-field.
+
+            The NOAA ISD format stores several values per column, each with its
+            own 'missing' sentinel and scaling factor. The sentinel must be
+            cleared *before* scaling, otherwise the sentinel is silently
+            converted into a plausible-looking physical value.
+            """
+            values = pd.to_numeric(
+                data[column].astype(str).str.split(',').str[index], errors='coerce'
+            )
+            return values.replace(missing, np.nan) / scale
+
+        # Process 'DEW' column if present (tenths of degrees Celsius)
         if 'DEW' in data.columns:
-            dew_df = data['DEW'].str.split(',', expand=True)
-            dew_df.columns = ['dew_point', 'dew_point_quality']
-            dew_df['dew_point'] = pd.to_numeric(dew_df['dew_point'], errors='coerce')
-            dew_df['dew_point'] = dew_df['dew_point'].replace(9999, np.nan)
-            processed_data['dew_point'] = dew_df['dew_point']
+            processed_data['dew_point'] = _field('DEW', 0, 9999, scale=10.0)
 
-        # Process 'SLP' column if present
+        # Process 'SLP' column if present (tenths of hectopascals)
         if 'SLP' in data.columns:
-            slp_df = data['SLP'].str.split(',', expand=True)
-            slp_df.columns = ['pressure', 'pressure_quality']
-            slp_df['pressure'] = pd.to_numeric(slp_df['pressure'], errors='coerce')
-            slp_df['pressure'] = slp_df['pressure'].replace(99999, np.nan)
-            processed_data['atmospheric_pressure'] = slp_df['pressure']
+            processed_data['atmospheric_pressure'] = _field('SLP', 0, 99999, scale=10.0)
 
-        # Process 'TMP' column if present
+        # Process 'TMP' column if present (tenths of degrees Celsius)
         if 'TMP' in data.columns:
-            tmp_df = data['TMP'].str.split(',', expand=True)
-            tmp_df.columns = ['air_temp', 'air_temp_quality']
-            tmp_df['air_temp'] = pd.to_numeric(tmp_df['air_temp'], errors='coerce') / 10.0
-            tmp_df['air_temp'] = tmp_df['air_temp'].replace(999.9, np.nan)
-            processed_data['air_temp'] = tmp_df['air_temp']
+            processed_data['air_temp'] = _field('TMP', 0, 9999, scale=10.0)
 
         # Process 'WND' column if present
         if 'WND' in data.columns:
-            wnd_df = data['WND'].str.split(',', expand=True)
-            wnd_df.columns = ['wind_direction', 'wind_direction_quality', 'wind_type', 'wind_speed', 'wind_speed_quality']
-            wnd_df['wind_direction'] = pd.to_numeric(wnd_df['wind_direction'], errors='coerce')
-            wnd_df['wind_direction'] = wnd_df['wind_direction'].replace(999, np.nan)
-            wnd_df['wind_speed'] = pd.to_numeric(wnd_df['wind_speed'], errors='coerce') / 10.0
-            wnd_df['wind_speed'] = wnd_df['wind_speed'].replace(999.9, np.nan)
-            processed_data['wd'] = wnd_df['wind_direction']
-            processed_data['ws'] = wnd_df['wind_speed']
+            # Sub-fields: direction, direction quality, type, speed, speed quality
+            processed_data['wd'] = _field('WND', 0, 999)               # angular degrees
+            processed_data['ws'] = _field('WND', 3, 9999, scale=10.0)  # tenths of m/s
 
         # Extract station and date information
         processed_data['station'] = data.get('STATION')
@@ -330,12 +325,18 @@ def parse_noaa_data(data: pd.DataFrame) -> pd.DataFrame:
         # Set 'date' as the index
         new_data.set_index('date', inplace=True)
         
-        # Identify the numeric columns for resampling
-        numeric_cols = ['air_temp', 'ws', 'wd', 'dew_point', 'atmospheric_pressure']
-        # Resample numeric data hourly and compute the mean
-        numeric_data = new_data[numeric_cols].resample('H').mean()
+        # Identify the numeric columns for resampling. Only keep the ones that
+        # were actually present in the source file, otherwise a station that
+        # does not report (say) SLP would raise a KeyError.
+        numeric_cols = [
+            col for col in ['air_temp', 'ws', 'wd', 'dew_point', 'atmospheric_pressure']
+            if col in new_data.columns
+        ]
+        # Resample numeric data hourly and compute the mean.
+        # Note: 'h' rather than 'H', which pandas 3 removed.
+        numeric_data = new_data[numeric_cols].resample('h').mean()
         numeric_data['site'] = site_id
-        
+
         # Calculate relative humidity
         if 'air_temp' in numeric_data and 'dew_point' in numeric_data:
             air_temp = numeric_data['air_temp']

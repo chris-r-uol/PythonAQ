@@ -1,0 +1,65 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ['3.9', '3.10', '3.11', '3.12', '3.13']
+        include:
+          - os: macos-latest
+            python-version: '3.12'
+          - os: windows-latest
+            python-version: '3.12'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install package and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[dev]'
+
+      - name: Lint with flake8
+        run: |
+          # Fail the build on syntax errors and undefined names
+          flake8 PythonAQ tests app.py --count --select=E9,F63,F7,F82 --show-source --statistics
+          # Everything else is advisory
+          flake8 PythonAQ tests app.py --count --exit-zero --max-complexity=15 --max-line-length=127 --statistics
+
+      - name: Run tests
+        run: pytest -v --cov=PythonAQ --cov-report=term-missing
+
+  # The calendar plot needs plotly-calplot, which pins numpy<2/plotly<6 and does
+  # not work on pandas 3. Exercise it in its own constrained job.
+  test-calendar-extra:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install with the calendar extra
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[calendar,dev]'
+
+      - name: Run tests
+        run: pytest -v

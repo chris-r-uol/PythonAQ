@@ -228,7 +228,7 @@ def wind_rose(df, ws_col='ws', wd_col='wd',
             if speed in pivot.columns:
                 fig.add_trace(go.Barpolar(
                     r=pivot[speed],
-                    theta=pivot.index.str.extract('(\d+)')[0].astype(float) + bin_size/2,
+                    theta=pivot.index.str.extract(r'(\d+)')[0].astype(float) + bin_size/2,
                     width=bin_size,
                     name=f"{speed} m/s",
                     marker_color=colors[i]
@@ -303,7 +303,7 @@ def wind_rose(df, ws_col='ws', wd_col='wd',
                     
                     fig.add_trace(go.Barpolar(
                         r=group_data[speed],
-                        theta=group_data['direction_bin'].str.extract('(\d+)')[0].astype(float) + bin_size/2,
+                        theta=group_data['direction_bin'].str.extract(r'(\d+)')[0].astype(float) + bin_size/2,
                         width=bin_size,
                         name=name,
                         marker_color=colors[i],

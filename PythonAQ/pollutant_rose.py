@@ -4,7 +4,22 @@ import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 from math import ceil
-from wind_rose import wind_rose  # Assuming wind_rose is imported as specified
+
+def _make_bin_labels(edges):
+    """Build unique, readable labels for a sequence of numeric bin edges.
+
+    Uses the coarsest precision that still keeps every label distinct, so
+    wide bins read as '0 to 13' while narrow ones keep their decimals.
+    """
+    for precision in (0, 1, 2, 3):
+        labels = [
+            f"{edges[i]:.{precision}f} to {edges[i + 1]:.{precision}f}"
+            for i in range(len(edges) - 1)
+        ]
+        if len(set(labels)) == len(labels):
+            return labels
+    return labels
+
 
 def pollutant_rose(df, pollutant, wd_col='wd', condition_col=None,
                    direction_bins=16, pollutant_bins=None, 
@@ -109,12 +124,17 @@ def pollutant_rose(df, pollutant, wd_col='wd', condition_col=None,
     
     # Define default pollutant bins if not provided
     if pollutant_bins is None:
-        # Use quantiles to define sensible bins
-        pollutant_bins = list(pd.qcut(data[pollutant], 7, duplicates='drop').cat.categories)
-        pollutant_labels = [f"{int(interval.left)} to {int(interval.right)}" for interval in pollutant_bins]
+        # Use quantiles to define sensible bins.
+        # qcut returns Interval categories; pd.cut silently ignores `labels`
+        # when it is handed intervals rather than numeric edges, which left the
+        # binned column labelled with Intervals that the plotting loop below
+        # could never match. Convert to numeric edges instead.
+        categories = pd.qcut(data[pollutant], 7, duplicates='drop').cat.categories
+        pollutant_bins = [categories[0].left] + [interval.right for interval in categories]
+        pollutant_labels = _make_bin_labels(pollutant_bins)
     else:
         if pollutant_labels is None:
-            pollutant_labels = [f"{pollutant_bins[i]} to {pollutant_bins[i+1]}" for i in range(len(pollutant_bins)-1)]
+            pollutant_labels = _make_bin_labels(pollutant_bins)
     
     # Define direction bins
     bin_size = 360 / direction_bins
@@ -274,7 +294,7 @@ def pollutant_rose(df, pollutant, wd_col='wd', condition_col=None,
             if bin_label in pivot.columns:
                 fig.add_trace(go.Barpolar(
                     r=pivot[bin_label],
-                    theta=pivot.index.str.extract('(\d+)')[0].astype(float) + bin_size/2,
+                    theta=pivot.index.str.extract(r'(\d+)')[0].astype(float) + bin_size/2,
                     width=bin_size,
                     name=f"{bin_label}",
                     marker_color=colors[i]
@@ -345,7 +365,7 @@ def pollutant_rose(df, pollutant, wd_col='wd', condition_col=None,
                     
                     fig.add_trace(go.Barpolar(
                         r=group_data[bin_label],
-                        theta=group_data['direction_bin'].str.extract('(\d+)')[0].astype(float) + bin_size/2,
+                        theta=group_data['direction_bin'].str.extract(r'(\d+)')[0].astype(float) + bin_size/2,
                         width=bin_size,
                         name=name,
                         marker_color=colors[i],

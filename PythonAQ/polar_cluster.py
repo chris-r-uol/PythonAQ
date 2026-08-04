@@ -1,11 +1,9 @@
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-import plotly.colors as pcolors
 import plotly.express as px
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
-import streamlit as st
 
 def polar_cluster(
     df,

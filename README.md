@@ -19,6 +19,7 @@ This repository provides a comprehensive set of Python tools for downloading, pr
         - [polar_frequency_plot](#polar_frequency_plot)
         - [polar_plot](#polar_plot)
         - [pollutant_rose](#pollutant_rose)
+        - [smooth_trend_plot](#smooth_trend_plot)
         - [summary_plot](#summary_plot)
         - [theil_sen_plot](#theil_sen_plot)
         - [time_plot](#time_plot)
@@ -27,6 +28,7 @@ This repository provides a comprehensive set of Python tools for downloading, pr
         - [deseason_data](#deseason_data)
         - [get_period](#get_period)
         - [e_sat and rh](#e_sat-and-rh)
+- [Development](#development)
 - [Contributing](#contributing)
 - [Licence](#licence)
 
@@ -38,33 +40,73 @@ This repository provides a comprehensive set of Python tools for downloading, pr
 - **Meteorological Calculations**: Functions to calculate relative humidity and saturation vapour pressure.
 
 ## Installation
-To use this toolkit, clone the repository and install the required dependencies:
+Clone the repository and install the package:
 
 ```bash
 git clone https://github.com/chris-r-uol/PythonAQ.git
 cd PythonAQ
-pip install -r requirements.txt
+pip install -e .
 ```
 
-## Dependencies
-- Python 3.7 or higher
-- requests
-- rdata
-- pandas
-- numpy
-- plotly
-- pygam
-- scikit-learn
-- streamlit (for testing and web-application purposes)
+This installs `PythonAQ` and its runtime dependencies, so the package is
+importable from anywhere:
 
-## Web Application Demo
-A web application written using Streamlit (https://streamlit.io) is available as app.py. To run this application, first ensure Streamlit is installed and you are in the appropriate directory, then use the following commands to execute the programme.
+```python
+from PythonAQ import import_aq_meta, wind_rose
+```
+
+### Optional extras
+Some features carry dependencies that are deliberately kept out of the core
+install:
 
 ```bash
+pip install -e '.[calendar]'  # the calendar plot
+pip install -e '.[app]'       # the Streamlit demo application
+pip install -e '.[dev]'       # test and lint tooling
+```
+
+> **Note on the `calendar` extra:** it relies on `plotly-calplot`, which pins
+> `numpy<2` and `plotly<6`, and is not compatible with pandas 3. Installing it
+> will constrain the rest of your environment, which is why `calendar` is the
+> only function not available from a plain `pip install -e .`.
+
+## Dependencies
+- Python 3.9 or higher
+- numpy, pandas, scipy
+- plotly
+- requests, rdata
+- scikit-learn
+- statsmodels
+- pymannkendall
+- pygam
+
+Optional: `plotly-calplot` (calendar plot), `streamlit` (demo app),
+`pytest`/`flake8` (development).
+
+## Web Application Demo
+A web application written using [Streamlit](https://streamlit.io) is available
+as `app.py` in the repository root. Install the `app` extra, then run it from
+the repository root:
+
+```bash
+pip install -e '.[app,calendar]'
 streamlit run app.py
 ```
 
-The web app has pre-loaded the current visualisation functions and implementations can be used elsewhere.
+The web app has pre-loaded the current visualisation functions and
+implementations can be used elsewhere.
+
+## Development
+
+Run the test suite with:
+
+```bash
+pip install -e '.[dev]'
+pytest
+```
+
+The tests use synthetic data throughout and never touch the network, so they
+run offline and deterministically.
 
 ## Usage
 
@@ -233,6 +275,27 @@ fig.show()
 - `go.Figure`: Pollutant rose figure.
 - `pd.DataFrame`: Summary statistics.
 
+#### smooth_trend_plot
+Fits a non-parametric smooth trend (a GAM) to averaged time series data, with a
+confidence band and a Mann-Kendall significance annotation.
+
+```python
+from PythonAQ import smooth_trend_plot
+
+fig = smooth_trend_plot(data_df, pollutant_col='NO2', avg_freq='MS')
+fig.show()
+```
+**Parameters:**
+- `df` (pd.DataFrame): Input data.
+- `date_col` (str): Datetime column, defaults to `'date_time'`.
+- `pollutant_col` (str): Column for analysis.
+- `avg_freq` (str): Averaging frequency, defaults to `'MS'` (month start).
+- `deseason` (bool): Whether to remove the seasonal cycle via STL first.
+- `alpha` (float): Significance level for the confidence band.
+
+**Returns:**
+- `go.Figure`: Smooth trend plot.
+
 #### summary_plot
 Generates a comprehensive data summary plot and statistics.
 
@@ -255,7 +318,7 @@ Performs Theil-Sen regression analysis and plots the time series data.  Deseason
 ```python
 from PythonAQ import theil_sen_plot
 
-fig = theil_sen_plot(data_df, pollutant_col='NO2', agg_freq='M')
+fig = theil_sen_plot(data_df, pollutant_col='NO2', agg_freq='ME')
 fig.show()
 ```
 **Parameters:**
@@ -306,15 +369,23 @@ The utilities functions are various helper functions to aid the rest of the func
 A function to deseason data.
 
 ```python
-from PythonAQ import deseason_data
-ds = deseason_data(data=df, pollutant_column='NO', interval='7D', period=utilities.get_period('7D') , method='additive', date_column='date_time')
+from PythonAQ import deseason_data, get_period
+
+ds = deseason_data(
+    data=df,
+    pollutant_column='NO',
+    interval='7D',
+    period=get_period('7D'),
+    method='additive',
+    date_column='date_time',
+)
 ```
 
 **deseason_data Parameters**
 - `data` (pd.DataFrame): Data frame containing the data to be deseasoned.
 - `pollutant_column` (str): Column heading for the pollutant to be analysed
-- `interval` (str): The time interval to be averaged, can be H, D, M, Q, Y/A.
-- `period` (int): The period for the deseasoning algorith.  This can be solved in terms of the interval by using the utilities.get_period() function
+- `interval` (str): The time interval to be averaged, e.g. `'h'`, `'D'`, `'7D'`, `'ME'`, `'QE'`, `'YE'`.
+- `period` (int): The period for the deseasoning algorith.  This can be solved in terms of the interval by using the get_period() function
 - `method` (str): The method for performing the deseasoning
 - `date_column` (str): The location of the date and time information in the dataset, defaults to 'date_time'.
 
@@ -325,7 +396,9 @@ ds = deseason_data(data=df, pollutant_column='NO', interval='7D', period=utiliti
 A function to convert the pandas time series strings into appropriate values for the deseasoning algorithm
 
 ```python
-from PythonAQ import get_period('7D')
+from PythonAQ import get_period
+
+period = get_period('7D')
 ```
 
 **get_period Parameters**

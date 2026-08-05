@@ -51,6 +51,9 @@ dev = [
     "pytest-cov>=4.0",
     "flake8>=6.0",
 ]
+# Static image export for the README figures, via examples/build_readme_figures.py.
+# kaleido is pinned below 1.0 because plotly 5.x drives the older API.
+docs = ["kaleido<1.0"]
 
 [project.urls]
 Homepage = "https://github.com/chris-r-uol/PythonAQ"

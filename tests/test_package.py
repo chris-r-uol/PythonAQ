@@ -45,6 +45,27 @@ def test_version_is_exposed():
     assert isinstance(PythonAQ.__version__, str)
 
 
+def test_version_is_a_valid_release_number():
+    parts = PythonAQ.__version__.split('.')
+    assert len(parts) >= 2, PythonAQ.__version__
+    assert all(p.isdigit() for p in parts[:2]), PythonAQ.__version__
+
+
+def test_installed_metadata_matches_the_module_version():
+    """The packaged version must track ``__version__``.
+
+    pyproject declares the version dynamically from this attribute, so the two
+    cannot drift; this fails if anyone reintroduces a hardcoded literal.
+    """
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        installed = version('PythonAQ')
+    except PackageNotFoundError:
+        pytest.skip('PythonAQ is not installed in this environment')
+    assert installed == PythonAQ.__version__
+
+
 def test_all_advertised_names_are_importable():
     assert EXPECTED_API <= set(PythonAQ.__all__)
 

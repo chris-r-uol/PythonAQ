@@ -58,6 +58,47 @@ class TestTimeVariation:
         assert weekday['Saturday'] < weekday['Wednesday'] - 5
         assert weekday['Sunday'] < weekday['Wednesday'] - 5
 
+    def test_weekday_hour_panel_spans_exactly_one_week(self, structured_df):
+        """Regression: cat.codes is int8, so Sunday's 6 * 24 = 144 overflowed
+        to -112 and its block landed off the left-hand end of the axis."""
+        _, summary = time_variation(structured_df, 'NO2', random_state=0)
+        x = sorted(summary[summary['panel'] == 'weekday.hour']['x'].astype(int))
+        assert x == list(range(168)), 'panel must run 0-167 with no gaps'
+
+    def test_weekday_hour_blocks_line_up_with_the_weekday_panel(self, structured_df):
+        """Each 24-hour block must be the weekday its axis label claims.
+
+        Cross-checked against the independently computed day-of-week panel, so
+        this catches a wrong offset as well as a wrong order.
+        """
+        _, summary = time_variation(structured_df, 'NO2', random_state=0)
+        blocks = summary[summary['panel'] == 'weekday.hour'].set_index('x')['value']
+        by_day = summary[summary['panel'] == 'weekday'].set_index('x')['value']
+
+        weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday',
+                    'Saturday', 'Sunday']
+        for index, day in enumerate(weekdays):
+            block_mean = blocks.loc[index * 24:index * 24 + 23].mean()
+            assert block_mean == pytest.approx(by_day[day], abs=0.5), day
+
+    def test_weekday_hour_axis_is_pinned_to_the_full_week(self, structured_df):
+        """The tick labels are positioned absolutely, so the range must be too,
+        or a missing weekday would shift the data out from under its label."""
+        fig, _ = time_variation(structured_df, 'NO2', random_state=0)
+        assert list(fig.layout.xaxis.range) == [-1, 168]
+        assert list(fig.layout.xaxis.tickvals) == [d * 24 + 12 for d in range(7)]
+
+    def test_a_missing_weekday_does_not_shift_the_others(self, structured_df):
+        """Dropping Wednesday must leave every other day where it was."""
+        without_wednesday = structured_df[
+            structured_df['date_time'].dt.day_name() != 'Wednesday'
+        ]
+        _, summary = time_variation(without_wednesday, 'NO2', random_state=0)
+        x = set(summary[summary['panel'] == 'weekday.hour']['x'].astype(int))
+        assert not (x & set(range(48, 72))), 'Wednesday block should be empty'
+        assert set(range(0, 24)) <= x, 'Monday should still be at 0-23'
+        assert set(range(144, 168)) <= x, 'Sunday should still be at 144-167'
+
     def test_confidence_interval_brackets_the_estimate(self, structured_df):
         _, summary = time_variation(structured_df, 'NO2', random_state=0)
         valid = summary.dropna(subset=['lower', 'upper'])

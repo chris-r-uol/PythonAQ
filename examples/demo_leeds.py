@@ -370,8 +370,13 @@ def section_plots(metadata: pd.DataFrame, aq: pd.DataFrame,
     used('percentile_rose')
 
     step('polar_plot')
-    save(polar_plot(aq, conc_col='NO2'), 'polar_plot',
-         'NO2 by wind speed and direction, GAM-smoothed')
+    save(polar_plot(aq, conc_col='NO2', min_count=10, resolution=400),
+         'polar_plot', 'NO2 by wind speed and direction, GAM-smoothed raster')
+    save(polar_plot(aq, conc_col='NO2', min_count=10, render='contour',
+                    title='Polar Plot of NO2 (contour bands)'),
+         'polar_plot_contour', 'the same surface as filled contour bands')
+    print('  render="raster" draws one continuous surface; "contour" bands it;')
+    print('  "tile" is the original one-polygon-per-bin rendering.')
     used('polar_plot')
 
     step('polar_frequency_plot')

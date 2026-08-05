@@ -54,6 +54,11 @@ def wind_rose(df, ws_col='ws', wd_col='wd',
     if group_by not in ['none', 'year', 'quartile']:
         raise ValueError("Invalid group_by option. Choose 'none', 'year', or 'quartile'.")
     
+    # Copy before adding any grouping columns, so the caller's DataFrame is
+    # left alone. Only the year and quartile branches write, which is why this
+    # went unnoticed under the default group_by='none'.
+    df = df.copy()
+
     # Handle grouping logic
     if group_by == 'year':
         if date_col is None:
@@ -175,7 +180,7 @@ def wind_rose(df, ws_col='ws', wd_col='wd',
         freq['count'] = freq['count'] * freq['direction_bin'].map(adjustment_factors)
         if mode == 'percentage':
             # Calculate total counts per direction bin for percentage
-            total_counts = freq.groupby('direction_bin')['count'].sum().reset_index(name='total')
+            total_counts = freq.groupby('direction_bin', observed=False)['count'].sum().reset_index(name='total')
             freq = freq.merge(total_counts, on='direction_bin')
             freq['value'] = (freq['count'] / freq['total']) * 100
         else:
@@ -184,7 +189,8 @@ def wind_rose(df, ws_col='ws', wd_col='wd',
     
     # Pivot the data for plotting
     if group_column:
-        pivot = freq.pivot_table(index=[group_column, 'direction_bin'], columns='speed_bin', values='value', fill_value=0).reset_index()
+        pivot = freq.pivot_table(index=[group_column, 'direction_bin'], columns='speed_bin',
+                                 values='value', fill_value=0, observed=False).reset_index()
         # Sort direction bins numerically based on starting degree
         if group_by == 'quartile':
             # For quartiles, maintain order Q1 to Q4

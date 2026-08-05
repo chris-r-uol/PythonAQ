@@ -241,7 +241,7 @@ def pollutant_rose(df, pollutant, wd_col='wd', condition_col=None,
             ).reset_index()
             if mode == 'percentage':
                 # Calculate total counts per direction bin for percentage
-                total_counts = freq.groupby('direction_bin')['count'].sum().reset_index(name='total')
+                total_counts = freq.groupby('direction_bin', observed=False)['count'].sum().reset_index(name='total')
                 freq = freq.merge(total_counts, on='direction_bin')
                 freq['value'] = (freq['count'] / freq['total']) * 100
             else:
@@ -253,7 +253,7 @@ def pollutant_rose(df, pollutant, wd_col='wd', condition_col=None,
         pivot = freq.pivot_table(index=[group_column, 'direction_bin'], 
                                  columns='pollutant_bin', 
                                  values='value', 
-                                 fill_value=0).reset_index()
+                                 fill_value=0, observed=False).reset_index()
         # Sort direction bins numerically based on starting degree
         pivot['direction_order'] = pivot['direction_bin'].apply(
             lambda x: 0 if x == 'Calm' else int(x.split('-')[0])

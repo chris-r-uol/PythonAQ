@@ -11,9 +11,11 @@ hand-drawn mock-ups. Re-run it after changing any plotting function:
 Data is cached under examples/output/cache/, shared with demo_leeds.py, so
 repeat runs do not re-download. Pass --refresh to force a re-download.
 
-Images are written at a fixed pixel size and rendered by kaleido, which is
-deterministic, so re-running without code changes produces byte-identical
-files and does not churn the git history.
+Chart rendering is deterministic, so re-running without code changes reproduces
+the same bytes. map_sites is the exception: it fetches map tiles from a remote
+server, and those come back subtly different each run, so its PNG would churn
+in git on every rebuild. To avoid that, a freshly rendered image is only written
+when it actually differs from the one on disk by more than a negligible amount.
 """
 
 from __future__ import annotations
@@ -80,7 +82,7 @@ def _rms_difference(a, b):
     return math.sqrt(sum(i * i * c for i, c in enumerate(histogram)) / total)
 
 
-def _shrink(path):
+def _shrink(png_bytes):
     """Re-encode a PNG as small as it will go without a visible change.
 
     Charts use few distinct colours, so an adaptive 256-colour palette is
@@ -92,7 +94,7 @@ def _shrink(path):
 
     from PIL import Image
 
-    original = Image.open(path).convert('RGB')
+    original = Image.open(io.BytesIO(png_bytes)).convert('RGB')
     lossless = io.BytesIO()
     original.save(lossless, 'PNG', optimize=True)
 
@@ -106,19 +108,50 @@ def _shrink(path):
         if buffer.tell() < best.tell():
             best, note = buffer, f'256 colours, rms {error:.2f}'
 
-    if best.tell() < path.stat().st_size:
-        path.write_bytes(best.getvalue())
-    return note
+    return (best.getvalue() if best.tell() < len(png_bytes) else png_bytes), note
+
+
+def _is_visually_unchanged(path, new_bytes, tolerance=1.0):
+    """True if `new_bytes` is indistinguishable from the PNG already at `path`.
+
+    map_sites re-fetches its map tiles on every run and comes back subtly
+    different each time. Rewriting it would churn a few hundred KB of binary in
+    git for no visible change, so an imperceptible difference counts as no
+    change at all.
+    """
+    import io
+
+    from PIL import Image
+
+    if not path.exists():
+        return False
+    try:
+        existing = Image.open(path)
+        candidate = Image.open(io.BytesIO(new_bytes))
+        if existing.size != candidate.size:
+            return False
+        return _rms_difference(existing, candidate) < tolerance
+    except Exception:
+        return False
 
 
 def save(fig, name: str, width: int = 900, height: int = 620,
          scale: float = SCALE) -> None:
-    """Render one figure to docs/images/<name>.png, then shrink it."""
+    """Render one figure, shrink it, and write it if it actually changed."""
     import plotly.io as pio
 
     path = IMAGE_DIR / f'{name}.png'
-    pio.write_image(fig, path, width=width, height=height, scale=scale)
-    note = _shrink(path)
+    rendered = pio.to_image(fig, format='png', width=width, height=height,
+                            scale=scale)
+    shrunk, note = _shrink(rendered)
+
+    if _is_visually_unchanged(path, shrunk):
+        size_kb = path.stat().st_size // 1024
+        _written.append((name, size_kb))
+        print(f'  {name + ".png":<26} {size_kb:>5} KB  unchanged, kept on disk')
+        return
+
+    path.write_bytes(shrunk)
     size_kb = path.stat().st_size // 1024
     _written.append((name, size_kb))
     print(f'  {name + ".png":<26} {size_kb:>5} KB  {note}')

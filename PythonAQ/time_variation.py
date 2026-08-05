@@ -141,7 +141,7 @@ def time_variation(df, pollutant, date_col='date_time', statistic='mean',
         specs=[[{'colspan': 2}, None], [{}, {}], [{}, {}]],
         subplot_titles=('Hour of day, by weekday', 'Day of week',
                         'Hour of day', 'Month of year', ''),
-        vertical_spacing=0.11, horizontal_spacing=0.08,
+        vertical_spacing=0.14, horizontal_spacing=0.08,
     )
 
     records = []
@@ -149,9 +149,15 @@ def time_variation(df, pollutant, date_col='date_time', statistic='mean',
         colour = colours[i % len(colours)]
         subset = data.dropna(subset=[name])
 
-        # Panel 1: hour of day within each weekday, laid out as a single axis.
+        # Panel 1: hour of day within each weekday, laid out as a single axis
+        # running 0-167, so Monday 00:00 is 0 and Sunday 23:00 is 167.
+        #
+        # cat.codes is int8, and Sunday's code of 6 times 24 is 144, past the
+        # 127 that int8 holds. Left as int8 it wraps to -112, putting Sunday's
+        # block off the left-hand end of the axis. Widen before multiplying.
+        weekday_index = subset['weekday'].cat.codes.astype('int64')
         by_day_hour = _summarise(
-            subset.assign(_key=subset['weekday'].cat.codes * 24 + subset['hour']),
+            subset.assign(_key=weekday_index * 24 + subset['hour']),
             '_key', name, statistic, conf_int, n_boot, rng,
         )
         _add_series(fig, by_day_hour['_key'], by_day_hour, name, colour,
@@ -159,10 +165,12 @@ def time_variation(df, pollutant, date_col='date_time', statistic='mean',
         records.append(by_day_hour.assign(pollutant=name, panel='weekday.hour')
                        .rename(columns={'_key': 'x'}))
 
-        # Panel 2: day of week
+        # Panel 2: day of week. Abbreviated on the axis to match panel 1 above
+        # and to stop full names being rotated into the panel below; the
+        # returned summary keeps the full names.
         by_day = _summarise(subset, 'weekday', name, statistic, conf_int, n_boot, rng)
-        _add_series(fig, by_day['weekday'].astype(str), by_day, name, colour,
-                    2, 1, ci, showlegend=False)
+        _add_series(fig, [str(d)[:3] for d in by_day['weekday']], by_day, name,
+                    colour, 2, 1, ci, showlegend=False)
         records.append(by_day.assign(pollutant=name, panel='weekday')
                        .rename(columns={'weekday': 'x'}))
 
@@ -181,16 +189,20 @@ def time_variation(df, pollutant, date_col='date_time', statistic='mean',
                        .rename(columns={'month': 'x'}))
 
     # Label panel 1 with weekday names at the midpoint of each 24-hour block.
+    # The range is pinned to the full week so the labels stay aligned with the
+    # data even if a weekday is entirely missing from the input.
     fig.update_xaxes(
         tickmode='array',
         tickvals=[day * 24 + 12 for day in range(7)],
         ticktext=[d[:3] for d in _WEEKDAY_ORDER],
+        range=[-1, 168],
         row=1, col=1,
     )
     for day in range(1, 7):
         fig.add_vline(x=day * 24 - 0.5, line=dict(color='lightgrey', width=1),
                       row=1, col=1)
 
+    fig.update_xaxes(title_text='weekday', row=2, col=1)
     fig.update_xaxes(title_text='hour', row=2, col=2, dtick=6)
     fig.update_xaxes(title_text='month', row=3, col=1)
     axis_title = 'normalised level' if normalise else 'concentration'

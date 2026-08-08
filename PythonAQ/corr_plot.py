@@ -2,6 +2,7 @@
 
 import numpy as np
 import plotly.graph_objects as go
+from .faceting import conditionable
 
 __all__ = ['corr_plot']
 
@@ -29,6 +30,7 @@ def _cluster_order(corr):
     return [corr.columns[i] for i in order]
 
 
+@conditionable
 def corr_plot(df, pollutants=None, method='pearson', cluster=True,
               annotate=True, colorscale='RdBu', title='Correlation Matrix',
               width=800, height=750, min_periods=10):

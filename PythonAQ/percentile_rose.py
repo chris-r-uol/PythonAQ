@@ -10,6 +10,7 @@ import plotly.colors as pcolors
 import plotly.graph_objects as go
 
 from .text import quick_text
+from .faceting import conditionable
 
 __all__ = ['percentile_rose']
 
@@ -54,6 +55,7 @@ def _cpf_figure(summary, pollutant, threshold, pct, explicit, colours, title,
     return fig, summary
 
 
+@conditionable
 def percentile_rose(df, pollutant, wd_col='wd', percentile=(25, 50, 75, 90, 95),
                     direction_bins=36, smooth=True, fill=True,
                     colours='Blues', title=None, mean_line=True,

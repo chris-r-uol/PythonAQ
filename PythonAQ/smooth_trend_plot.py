@@ -8,7 +8,9 @@ from scipy import stats
 import statsmodels.api as sm
 
 from .text import quick_text
+from .faceting import conditionable
 
+@conditionable
 def smooth_trend_plot(
     df,
     date_col='date_time',

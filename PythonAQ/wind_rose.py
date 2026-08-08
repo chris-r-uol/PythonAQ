@@ -4,7 +4,9 @@ import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 from math import ceil
+from .faceting import conditionable
 
+@conditionable
 def wind_rose(df, ws_col='ws', wd_col='wd', 
               date_col='date_time',  # Column for date/datetime
               direction_bins=16, speed_bins=None, 

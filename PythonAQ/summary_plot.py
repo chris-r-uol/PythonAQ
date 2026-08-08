@@ -1,7 +1,9 @@
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from .faceting import conditionable
 
+@conditionable
 def summary_plot(df, colours = {'ts':'dodgerblue', 'rug':'crimson', 'histogram':'orange'}):
     """
     Creates a comprehensive data summary plot using Plotly for the given DataFrame

@@ -45,10 +45,12 @@ from PythonAQ import (
     mod_stats,
     parse_noaa_data,
     percentile_rose,
+    polar_annulus,
     polar_cluster,
     polar_frequency_plot,
     polar_plot,
     pollutant_rose,
+    quick_text,
     rh,
     rolling_mean,
     scatter_plot,
@@ -288,6 +290,12 @@ def section_utilities(aq: pd.DataFrame, met: pd.DataFrame) -> pd.DataFrame:
     print(f'  deseasoned weekly NO2 sd : {deseasoned["deseasoned_NO2"].std():.2f}')
     used('deseason_data', 'get_period')
 
+    step('quick_text - formatting pollutant names and units for display')
+    for raw in ['no2', 'pm2.5', 'NOXasNO2', 'PM10 (ug/m3)', 'Leeds Centre']:
+        print(f'  {raw!r:<20} -> {quick_text(raw)!r}')
+    print('  applied automatically to plot titles, axis labels and colourbars')
+    used('quick_text')
+
     step('e_sat + rh - saturation vapour pressure and relative humidity')
     print(f'  e_sat(20 degC)        = {float(e_sat(20.0)):.2f} hPa')
     print(f'  rh(20 degC, 10 degC)  = {float(rh(20.0, 10.0)):.1f} %')
@@ -378,6 +386,26 @@ def section_plots(metadata: pd.DataFrame, aq: pd.DataFrame,
     print('  render="raster" draws one continuous surface; "contour" bands it;')
     print('  "tile" is the original one-polygon-per-bin rendering.')
     used('polar_plot')
+
+    step('polar_annulus - direction against time of day')
+    fig, annulus = polar_annulus(aq, 'NO2', period='hour')
+    save(fig, 'polar_annulus', 'NO2 by wind direction and hour')
+    worst = annulus.loc[annulus['mean'].idxmax()]
+    print(f'  highest mean at {worst["wd"]:.0f} degrees, hour {int(worst["level"]):02d}: '
+          f'{worst["mean"]:.1f} ug/m3')
+    used('polar_annulus')
+
+    step('percentile_rose statistic="cpf" - conditional probability function')
+    fig, cpf = percentile_rose(aq, 'NO2', statistic='cpf', percentile=95)
+    save(fig, 'cpf_rose', 'how often NO2 is in its top 5%, by direction')
+    peak = cpf.loc[cpf['cpf'].idxmax()]
+    print(f'  threshold (95th percentile): {peak["threshold"]:.1f} ug/m3')
+    print(f'  most often exceeded from {peak["wd"]:.0f} degrees, p={peak["cpf"]:.2f}')
+
+    step('type= conditioning - the same plot, once per season')
+    save(polar_plot(aq, conc_col='NO2', type='season', min_count=8,
+                    resolution=200, ws_limit=12),
+         'polar_plot_by_season', 'panels share one colour scale and axis limits')
 
     step('polar_frequency_plot')
     save(polar_frequency_plot(aq, separate_by_year=False), 'polar_frequency',

@@ -3,7 +3,9 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.colors as pcolors
 from plotly.subplots import make_subplots
+from .faceting import conditionable
 
+@conditionable
 def polar_frequency_plot(
     df, 
     ws_col='ws', 

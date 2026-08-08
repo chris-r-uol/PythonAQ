@@ -3,6 +3,7 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import plotly.express as px
+from .faceting import conditionable
 
 def calculate_arrow_positions(x, y, ws, wd, x_scale, y_scale):
     """
@@ -41,6 +42,7 @@ def calculate_arrow_positions(x, y, ws, wd, x_scale, y_scale):
     return xi, yi, xf, yf
 
 
+@conditionable
 def time_plot(
     df,
     date_col='date_time',

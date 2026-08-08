@@ -10,6 +10,7 @@ import pandas as pd
 import plotly.graph_objects as go
 
 from .text import quick_text
+from .faceting import conditionable
 
 __all__ = ['polar_annulus']
 
@@ -73,6 +74,7 @@ def _smooth_cyclic(grid, sigma, radially_cyclic):
     return np.where(denominator > 1e-6, smoothed, np.nan)
 
 
+@conditionable
 def polar_annulus(df, pollutant, period='hour', wd_col='wd',
                   date_col='date_time', wd_bins=72, resolution=400,
                   smooth=True, sigma=(1.0, 2.0), inner_radius=0.3,

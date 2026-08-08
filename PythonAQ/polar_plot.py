@@ -18,6 +18,7 @@ from pygam import LinearGAM, te
 from scipy.spatial import cKDTree
 
 from .text import quick_text
+from .faceting import conditionable
 
 __all__ = ['polar_plot']
 
@@ -33,6 +34,7 @@ def _to_components(ws, wd):
     return ws * np.sin(radians), ws * np.cos(radians)
 
 
+@conditionable
 def polar_plot(
     df,
     ws_col='ws',

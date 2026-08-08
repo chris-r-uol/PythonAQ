@@ -24,6 +24,7 @@ actually renders.
 
 - [Installation](#installation)
 - [Quick start](#quick-start)
+- [Conditioning with `type`](#conditioning-with-type)
 - [Getting data](#getting-data)
 - [Directional analysis](#directional-analysis) — how concentrations relate to wind
 - [Time series and trends](#time-series-and-trends)
@@ -92,6 +93,51 @@ fig.show()
 Most plotting functions return a Plotly `Figure`. Several also return a
 `DataFrame` of the values behind the plot, so you can check or reuse the
 numbers rather than reading them off a chart.
+
+---
+
+## Conditioning with `type`
+
+Nearly every plotting function takes `type`, which splits the data and draws
+one panel per level. openair introduces this in chapter 2, before any plotting
+chapter, because it applies to all of them.
+
+```python
+polar_plot(df, conc_col='NO2', type='season')
+```
+
+<p align="center"><img src="https://raw.githubusercontent.com/chris-r-uol/PythonAQ/main/docs/images/polar_plot_by_season.png" alt="Polar plot conditioned by season" width="700"></p>
+
+NO₂ at Leeds Centre is worst in winter and cleanest in summer, and the southerly
+arm is present year-round but strongest in the colder months.
+
+`type` accepts anything [`cut_data`](#cut_data) understands:
+
+| `type` | Panels |
+|---|---|
+| `'year'`, `'month'`, `'season'` | one per year, month or season |
+| `'weekday'`, `'weekend'` | one per day, or weekday against weekend |
+| `'hour'`, `'daylight'` | one per hour, or daylight against night |
+| `'wd'` | one per compass sector |
+| any numeric column | one per quantile, `n_levels` of them |
+
+Alongside it: `ncols` for panels per row, `hemisphere` for season definitions,
+`n_levels` for quantile counts, and `panel_height`.
+
+**Panels share one colour scale and one set of axis limits**, so they can
+actually be compared — otherwise the same colour, or the same radius, would
+mean different things in different panels. Any other argument is passed to
+every panel, so a data-driven limit can be fixed across them explicitly:
+
+```python
+# Without ws_limit each season sets its own radial extent from its own
+# 99th percentile, and the rings stop being comparable.
+polar_plot(df, conc_col='NO2', type='season', ws_limit=12)
+```
+
+Conditioning never changes what a function returns: `polar_plot` gives a
+figure with or without `type`, and `wind_rose` gives a `(figure, DataFrame)`
+pair either way, with the summary gaining a column naming the level.
 
 ---
 
@@ -268,6 +314,29 @@ fig, summary = percentile_rose(df, 'NO2', percentile=[25, 50, 75, 90, 95])
 - `percentile` (sequence): percentiles to draw.
 - `direction_bins` (int): wind direction sectors, default 36.
 - `fill` (bool), `mean_line` (bool): styling.
+- `statistic` (str): `'percentile'` (default) or `'cpf'`, below.
+- `cpf_threshold` (float): concentration defining "high" for the CPF; defaults
+  to the given `percentile` of the observations.
+
+#### The conditional probability function
+
+`statistic='cpf'` gives, for each wind sector, the proportion of observations
+above a threshold:
+
+```python
+percentile_rose(df, 'NO2', statistic='cpf', percentile=95)
+```
+
+<p align="center"><img src="https://raw.githubusercontent.com/chris-r-uol/PythonAQ/main/docs/images/cpf_rose.png" alt="Conditional probability function" width="560"></p>
+
+This asks *when the wind comes from here, how often is the concentration high?*
+— a different question from the directional mean, and one that finds sources a
+mean misses when they are intermittent. A sector that is usually clean but
+occasionally very dirty has an unremarkable mean and a high CPF.
+
+The threshold is taken over the whole record rather than per sector, so every
+sector is judged against one definition of "high", and the radial axis is fixed
+to 0–1 so two sites can be compared by eye.
 
 ### `polar_frequency_plot`
 
@@ -282,6 +351,27 @@ from PythonAQ import polar_frequency_plot
 
 polar_frequency_plot(df, separate_by_year=False).show()
 ```
+
+### `polar_annulus`
+
+Wind direction around the ring, a temporal variable through it. For sources
+that only appear at certain hours or in certain months, which a plain polar
+plot averages away.
+
+<p align="center"><img src="https://raw.githubusercontent.com/chris-r-uol/PythonAQ/main/docs/images/polar_annulus.png" alt="Polar annulus" width="560"></p>
+
+```python
+from PythonAQ import polar_annulus
+
+fig, summary = polar_annulus(df, 'NO2', period='hour')
+```
+
+- `period` (str): radial variable — `'hour'` (default), `'month'`, `'weekday'`,
+  `'season'` or `'trend'` (one ring per year).
+- `inner_radius` (float): size of the hole, so the innermost ring is not
+  squeezed to nothing.
+- `smooth` (bool), `sigma` (tuple): smoothing, which wraps at the cyclic edges
+  so there is no seam at north.
 
 ### `polar_cluster`
 
@@ -622,6 +712,29 @@ and clips the result to 0–100.
 
 ---
 
+### `quick_text`
+
+Formats pollutant names and units for display. Applied automatically to the
+titles, axis labels and colourbars of the plotting functions, so `'no2'` on an
+axis renders as NO₂.
+
+```python
+from PythonAQ import quick_text
+
+quick_text('no2')              # 'NO<sub>2</sub>'
+quick_text('PM2.5 (ug/m3)')    # 'PM<sub>2.5</sub> (µg m<sup>-3</sup>)'
+quick_text('Site 3 kerbside')  # unchanged
+```
+
+Matching is on whole tokens only. The species codes are short, so a careless
+substring match would mangle ordinary prose — `'nothing'`, `'Nottingham'` and
+`'concentration'` all pass through untouched.
+
+- `auto` (bool): set False to disable, without branching at the call site.
+- `plain` (bool): drop the markup, for contexts that do not render HTML.
+
+---
+
 ## Relationship to openair
 
 PythonAQ follows openair using Python naming conventions — `timeVariation`
@@ -641,12 +754,14 @@ the `modStats` metrics, the formulas follow the openair R source exactly.
 | `timePlot` | `time_plot` | | `scatterPlot` | `scatter_plot` |
 | `timeVariation` | `time_variation` | | `trendLevel` | `trend_level` |
 | `TheilSen` | `theil_sen_plot` | | `calendarPlot` | `calendar` |
-| `smoothTrend` | `smooth_trend_plot` | | | |
+| `smoothTrend` | `smooth_trend_plot` | | `polarAnnulus` | `polar_annulus` |
+| `quickText` | `quick_text` | | `cutData` / `type` | `type=` everywhere |
 
-**Not yet ported:** `polarAnnulus`, `polarDiff`, `timeProp`, `TaylorDiagram`,
-`conditionalQuantile`, `conditionalEval`, `distPlot`, the trajectory functions
-(`trajPlot`, `trajLevel`, `trajCluster`), and the remaining smoothers
-(`GaussianSmooth`, `WhittakerSmooth`, `kzFilter`).
+**Not yet ported:** `polarDiff`, `timeProp`, `TaylorDiagram`,
+`conditionalQuantile`, `conditionalEval`, `distPlot`, `linearRelation`, the
+trajectory functions (`trajPlot`, `trajLevel`, `trajCluster`), the remaining
+smoothers (`GaussianSmooth`, `WhittakerSmooth`, `kzFilter`), and the
+`openairmaps` interactive maps, which are a separate package.
 
 **Two deliberate differences:**
 

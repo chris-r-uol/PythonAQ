@@ -4,7 +4,9 @@ import plotly.graph_objects as go
 import plotly.express as px
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
+from .faceting import conditionable
 
+@conditionable
 def polar_cluster(
     df,
     ws_col='ws',

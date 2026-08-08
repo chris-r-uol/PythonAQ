@@ -36,6 +36,7 @@ from .data import (
 from .corr_plot import corr_plot
 from .map_sites import map_sites
 from .percentile_rose import percentile_rose
+from .polar_annulus import polar_annulus
 from .polar_cluster import polar_cluster
 from .polar_frequency import polar_frequency_plot
 from .polar_plot import polar_plot
@@ -61,6 +62,7 @@ from .data_utils import (
     time_average,
 )
 from .deweather_deseason import deseason_data
+from .text import quick_text
 from .utilities import e_sat, get_period, rh
 
 __all__ = [
@@ -75,6 +77,7 @@ __all__ = [
     "corr_plot",
     "map_sites",
     "percentile_rose",
+    "polar_annulus",
     "polar_cluster",
     "polar_frequency_plot",
     "polar_plot",
@@ -96,6 +99,7 @@ __all__ = [
     "deseason_data",
     "e_sat",
     "get_period",
+    "quick_text",
     "rh",
     "rolling_mean",
     "select_by_date",

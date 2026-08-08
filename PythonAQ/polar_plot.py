@@ -17,6 +17,8 @@ import plotly.graph_objects as go
 from pygam import LinearGAM, te
 from scipy.spatial import cKDTree
 
+from .text import quick_text
+
 __all__ = ['polar_plot']
 
 
@@ -200,6 +202,7 @@ def polar_plot(
     if vmax is None:
         vmax = float(np.nanmax(Z))
 
+    label = quick_text(conc_col)
     fig = go.Figure()
     if render == 'contour':
         fig.add_trace(go.Contour(
@@ -207,16 +210,16 @@ def polar_plot(
             colorscale=color_palette, zmin=vmin, zmax=vmax,
             ncontours=n_contours, contours=dict(coloring='fill', showlines=False),
             connectgaps=False,
-            colorbar=dict(title=conc_col, thickness=20, len=0.75, y=0.5),
-            hovertemplate=_hover_template(conc_col),
+            colorbar=dict(title=label, thickness=20, len=0.75, y=0.5),
+            hovertemplate=_hover_template(label),
         ))
     elif render == 'raster':
         fig.add_trace(go.Heatmap(
             x=grid_u[0, :], y=grid_v[:, 0], z=Z,
             colorscale=color_palette, zmin=vmin, zmax=vmax,
             zsmooth='best', connectgaps=False,
-            colorbar=dict(title=conc_col, thickness=20, len=0.75, y=0.5),
-            hovertemplate=_hover_template(conc_col),
+            colorbar=dict(title=label, thickness=20, len=0.75, y=0.5),
+            hovertemplate=_hover_template(label),
         ))
     else:
         _add_tiles(fig, ws_bins_array, wd_bins_array, Z, color_palette, vmin, vmax)
@@ -224,7 +227,7 @@ def polar_plot(
             x=[None], y=[None], mode='markers', showlegend=False,
             marker=dict(colorscale=color_palette, cmin=vmin, cmax=vmax, color=[],
                         showscale=True,
-                        colorbar=dict(title=conc_col, thickness=20, len=0.75, y=0.5)),
+                        colorbar=dict(title=label, thickness=20, len=0.75, y=0.5)),
         ))
 
     # The axis range must clear the outermost ring and its compass labels,

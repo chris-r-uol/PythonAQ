@@ -5,6 +5,8 @@ import pandas as pd
 import plotly.graph_objects as go
 from scipy import stats
 
+from .text import quick_text
+
 __all__ = ['scatter_plot']
 
 
@@ -116,8 +118,8 @@ def scatter_plot(df, x, y, method='scatter', colour_by=None, linear=False,
         ))
 
     fig.update_layout(
-        title=title or f'{y} vs {x}',
-        xaxis_title=x, yaxis_title=y,
+        title=title or f'{quick_text(y)} vs {quick_text(x)}',
+        xaxis_title=quick_text(x), yaxis_title=quick_text(y),
         template='plotly_white', width=width, height=height,
     )
     return fig, pd.DataFrame(records)

@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from .data_utils import cut_data
+from .text import quick_text
 
 __all__ = ['trend_level']
 
@@ -109,14 +110,14 @@ def trend_level(df, pollutant, x='month', y='hour', type='year',
             y=[str(v) for v in grid.index],
             colorscale=colorscale, zmin=zmin, zmax=zmax,
             showscale=(index == 0),
-            colorbar=dict(title=f'{pollutant}<br>({statistic})') if index == 0 else None,
+            colorbar=dict(title=f'{quick_text(pollutant)}<br>({statistic})') if index == 0 else None,
             hovertemplate=f'{x}: %{{x}}<br>{y}: %{{y}}<br>{statistic}: %{{z:.1f}}<extra></extra>',
         ), row=row, col=col)
         fig.update_xaxes(title_text=x, row=row, col=col)
         fig.update_yaxes(title_text=y, row=row, col=1)
 
     fig.update_layout(
-        title=title or f'Trend level: {pollutant}',
+        title=title or f'Trend level: {quick_text(pollutant)}',
         template='plotly_white', width=fig_width, height=fig_height,
     )
     return fig, summary

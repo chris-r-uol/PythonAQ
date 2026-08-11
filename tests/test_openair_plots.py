@@ -8,6 +8,7 @@ import pytest
 from PythonAQ import (
     corr_plot,
     percentile_rose,
+    polar_annulus,
     scatter_plot,
     time_variation,
     trend_level,
@@ -319,3 +320,131 @@ class TestCorrPlot:
     def test_invalid_method_raises(self, structured_df):
         with pytest.raises(ValueError, match='method must be'):
             corr_plot(structured_df, ['NO2', 'NOx'], method='nonsense')
+
+
+class TestConditionalProbabilityFunction:
+    """percentile_rose(statistic='cpf'), the openair book's section 7.3.
+
+    CPF asks: when the wind comes from this sector, how often is the
+    concentration high? That isolates directions responsible for episodes,
+    which a directional mean can miss when a source is intermittent.
+    """
+
+    @pytest.fixture
+    def directional_source(self, rng):
+        """20% of the time, easterly winds carry a strong plume."""
+        n = 40000
+        wd = rng.uniform(0, 360, n)
+        easterly = np.abs(((wd - 90 + 180) % 360) - 180) < 25
+        high = easterly & (rng.random(n) < 0.7)
+        no2 = np.where(high, rng.gamma(9, 12, n), rng.gamma(2, 8, n))
+        return pd.DataFrame({'wd': wd, 'NO2': no2})
+
+    def test_returns_probabilities(self, directional_source):
+        _, summary = percentile_rose(directional_source, 'NO2', statistic='cpf')
+        assert 'cpf' in summary.columns
+        valid = summary['cpf'].dropna()
+        assert ((valid >= 0) & (valid <= 1)).all()
+
+    def test_locates_the_source(self, directional_source):
+        _, summary = percentile_rose(directional_source, 'NO2',
+                                     statistic='cpf', percentile=90)
+        peak = summary.loc[summary['cpf'].idxmax(), 'wd']
+        assert 60 <= peak <= 120, f'CPF peaked at {peak}, source is at 90'
+
+    def test_probability_matches_the_planted_rate(self, directional_source):
+        """Within the plume sector roughly 70% of values should be high."""
+        _, summary = percentile_rose(directional_source, 'NO2',
+                                     statistic='cpf', percentile=90)
+        assert summary['cpf'].max() > 0.5
+
+    def test_threshold_defaults_to_the_requested_percentile(self, directional_source):
+        _, summary = percentile_rose(directional_source, 'NO2',
+                                     statistic='cpf', percentile=75)
+        expected = np.percentile(directional_source['NO2'], 75)
+        assert summary['threshold'].iloc[0] == pytest.approx(expected)
+
+    def test_explicit_threshold_is_used(self, directional_source):
+        _, summary = percentile_rose(directional_source, 'NO2',
+                                     statistic='cpf', cpf_threshold=100.0)
+        assert (summary['threshold'] == 100.0).all()
+
+    def test_higher_threshold_gives_lower_probabilities(self, directional_source):
+        _, low = percentile_rose(directional_source, 'NO2', statistic='cpf',
+                                 percentile=50)
+        _, high = percentile_rose(directional_source, 'NO2', statistic='cpf',
+                                  percentile=95)
+        assert high['cpf'].mean() < low['cpf'].mean()
+
+    def test_radial_axis_is_fixed_to_probability_range(self, directional_source):
+        """Two sites are only comparable if the scale does not float."""
+        fig, _ = percentile_rose(directional_source, 'NO2', statistic='cpf')
+        assert tuple(fig.layout.polar.radialaxis.range) == (0, 1)
+
+    def test_counts_are_reported(self, directional_source):
+        _, summary = percentile_rose(directional_source, 'NO2', statistic='cpf')
+        assert (summary['n_above'] <= summary['n']).all()
+
+    def test_invalid_statistic_raises(self, structured_df):
+        with pytest.raises(ValueError, match="'percentile' or 'cpf'"):
+            percentile_rose(structured_df, 'NO2', statistic='nonsense')
+
+
+class TestPolarAnnulus:
+    @pytest.mark.parametrize('period,levels', [
+        ('hour', 24), ('month', 12), ('weekday', 7), ('season', 4),
+    ])
+    def test_periods(self, structured_df, period, levels):
+        fig, summary = polar_annulus(structured_df, 'NO2', period=period)
+        assert_is_populated_figure(fig)
+        assert summary['level'].nunique() == levels
+
+    def test_trend_period_uses_one_ring_per_year(self, structured_df):
+        _, summary = polar_annulus(structured_df, 'NO2', period='trend')
+        expected = structured_df['date_time'].dt.year.nunique()
+        assert summary['level'].nunique() == expected
+
+    def test_centre_is_hollow(self, structured_df):
+        """The hole stops the innermost ring being squeezed to nothing."""
+        fig, _ = polar_annulus(structured_df, 'NO2', inner_radius=0.4)
+        z = np.asarray(fig.data[0].z, dtype=float)
+        middle = z.shape[0] // 2
+        assert np.isnan(z[middle, middle])
+
+    def test_outside_the_annulus_is_blank(self, structured_df):
+        fig, _ = polar_annulus(structured_df, 'NO2')
+        z = np.asarray(fig.data[0].z, dtype=float)
+        assert np.isnan(z[0, 0]) and np.isnan(z[-1, -1])
+        assert np.isfinite(z).any()
+
+    def test_recovers_a_source_active_only_at_night(self, rng):
+        """A plume present only between 00:00 and 04:00 from the west."""
+        dates = pd.date_range('2022-01-01', '2023-12-31 23:00', freq='h')
+        n = len(dates)
+        wd = rng.uniform(0, 360, n)
+        westerly = np.abs(((wd - 270 + 180) % 360) - 180) < 30
+        at_night = dates.hour.to_numpy() < 4
+        no2 = 20 + np.where(westerly & at_night, 60.0, 0.0) + rng.normal(0, 2, n)
+        df = pd.DataFrame({'date_time': dates, 'wd': wd, 'NO2': no2})
+
+        _, summary = polar_annulus(df, 'NO2', period='hour', smooth=False)
+        hot = summary.loc[summary['mean'].idxmax()]
+        assert hot['level'] < 4, 'should be found in the small hours'
+        assert 240 <= hot['wd'] <= 300, 'should be found to the west'
+
+    def test_invalid_period_raises(self, structured_df):
+        with pytest.raises(ValueError, match='Unknown period'):
+            polar_annulus(structured_df, 'NO2', period='fortnight')
+
+    def test_invalid_inner_radius_raises(self, structured_df):
+        with pytest.raises(ValueError, match='inner_radius'):
+            polar_annulus(structured_df, 'NO2', inner_radius=1.5)
+
+    def test_missing_column_raises(self, structured_df):
+        with pytest.raises(ValueError, match='not found'):
+            polar_annulus(structured_df, 'NOPE')
+
+    def test_does_not_mutate_input(self, structured_df):
+        before = structured_df.copy()
+        polar_annulus(structured_df, 'NO2')
+        pd.testing.assert_frame_equal(structured_df, before)

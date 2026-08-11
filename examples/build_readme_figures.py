@@ -42,6 +42,7 @@ from PythonAQ import (  # noqa: E402
     import_aq_meta,
     map_sites,
     percentile_rose,
+    polar_annulus,
     polar_cluster,
     polar_frequency_plot,
     polar_plot,
@@ -228,9 +229,22 @@ def main() -> int:
                              title='NO2 percentiles by wind direction')
     save(fig, 'percentile_rose', width=760, height=700)
 
+    save(percentile_rose(aq, 'NO2', statistic='cpf', percentile=95,
+                         title='CPF: how often NO2 is in its top 5%')[0],
+         'cpf_rose', width=760, height=700)
+
+    save(polar_annulus(aq, 'NO2', period='hour')[0],
+         'polar_annulus', width=760, height=740)
+
     save(polar_frequency_plot(aq, separate_by_year=False,
                               title='Wind speed and direction frequency'),
          'polar_frequency', width=760, height=700)
+
+    # Conditioning: the same plot, once per season, on shared scales.
+    save(polar_plot(aq, conc_col='NO2', type='season', min_count=8,
+                    resolution=260, ws_limit=12, panel_height=430,
+                    title='NO2 by season'),
+         'polar_plot_by_season', width=900, height=880, scale=1.2)
 
     save(polar_cluster(aq, feature_cols=['NO2', 'PM10', 'O3'], n_clusters=6),
          'polar_cluster', width=800, height=700)

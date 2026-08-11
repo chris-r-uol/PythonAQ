@@ -10,6 +10,7 @@ import pandas as pd
 import plotly.colors as pcolors
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from .faceting import conditionable
 
 __all__ = ['time_variation']
 
@@ -77,6 +78,7 @@ def _add_series(fig, x, summary, name, colour, row, col, show_ci, showlegend):
     ), row=row, col=col)
 
 
+@conditionable
 def time_variation(df, pollutant, date_col='date_time', statistic='mean',
                    conf_int=0.95, n_boot=100, normalise=False, ci=True,
                    title='Time Variation', colours=None, width=1100,

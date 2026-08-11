@@ -4,7 +4,9 @@ import plotly.graph_objects as go
 import pymannkendall as mk
 from scipy import stats # Scipy handles the CI for Theil-Sen correctly
 from statsmodels.tsa.seasonal import STL
+from .faceting import conditionable
 
+@conditionable
 def theil_sen_plot(
     df,
     date_col='date_time',

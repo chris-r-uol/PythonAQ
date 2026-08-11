@@ -7,6 +7,10 @@ import pymannkendall as mk
 from scipy import stats
 import statsmodels.api as sm
 
+from .text import quick_text
+from .faceting import conditionable
+
+@conditionable
 def smooth_trend_plot(
     df,
     date_col='date_time',
@@ -117,7 +121,7 @@ def smooth_trend_plot(
     )
 
     fig.update_layout(
-        title=title, xaxis_title='Date', yaxis_title=f"Concentration ({pollutant_col})",
+        title=title, xaxis_title='Date', yaxis_title=f"Concentration ({quick_text(pollutant_col)})",
         template='plotly_white', width=width, height=height,
         hovermode='x unified',
         legend=dict(x=1, y=1, xanchor='right', yanchor='top', bgcolor='rgba(255,255,255,0.6)')

@@ -4,6 +4,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 from math import ceil
+from .faceting import conditionable
 
 def _make_bin_labels(edges):
     """Build unique, readable labels for a sequence of numeric bin edges.
@@ -21,6 +22,7 @@ def _make_bin_labels(edges):
     return labels
 
 
+@conditionable
 def pollutant_rose(df, pollutant, wd_col='wd', condition_col=None,
                    direction_bins=16, pollutant_bins=None, 
                    calms=True, pollutant_labels=None, 

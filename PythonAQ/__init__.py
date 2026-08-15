@@ -33,6 +33,7 @@ from .data import (
 )
 
 # Visualisation
+from .conditional_quantile import conditional_quantile
 from .corr_plot import corr_plot
 from .map_sites import map_sites
 from .percentile_rose import percentile_rose
@@ -46,6 +47,8 @@ from .smooth_trend_plot import smooth_trend_plot
 from .summary_plot import summary_plot
 from .theil_sen_plot import theil_sen_plot
 from .time_plot import time_plot
+from .taylor_diagram import taylor_diagram
+from .time_prop import time_prop
 from .time_variation import time_variation
 from .trend_level import trend_level
 from .wind_rose import wind_rose
@@ -55,10 +58,14 @@ from .statistics import aq_stats, mod_stats
 
 # Utilities
 from .data_utils import (
+    bin_data,
     calc_percentile,
     cut_data,
+    date_pad,
     rolling_mean,
     select_by_date,
+    select_running,
+    split_by_date,
     time_average,
 )
 from .deweather_deseason import deseason_data
@@ -74,6 +81,7 @@ __all__ = [
     "parse_noaa_data",
     # Visualisation
     "calendar",
+    "conditional_quantile",
     "corr_plot",
     "map_sites",
     "percentile_rose",
@@ -85,8 +93,10 @@ __all__ = [
     "scatter_plot",
     "smooth_trend_plot",
     "summary_plot",
+    "taylor_diagram",
     "theil_sen_plot",
     "time_plot",
+    "time_prop",
     "time_variation",
     "trend_level",
     "wind_rose",
@@ -94,8 +104,10 @@ __all__ = [
     "aq_stats",
     "mod_stats",
     # Utilities
+    "bin_data",
     "calc_percentile",
     "cut_data",
+    "date_pad",
     "deseason_data",
     "e_sat",
     "get_period",
@@ -103,6 +115,8 @@ __all__ = [
     "rh",
     "rolling_mean",
     "select_by_date",
+    "select_running",
+    "split_by_date",
     "time_average",
     "__version__",
 ]

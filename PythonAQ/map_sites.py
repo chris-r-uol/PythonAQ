@@ -36,18 +36,26 @@ def map_sites(data, sites=['LEED', 'LED6']):
     if filtered_data.empty:
         raise ValueError("No sites found with the specified identifier(s).")
     
-    # Create the Plotly map
-    fig = px.scatter_mapbox(
-        filtered_data,
+    # Create the Plotly map.
+    #
+    # plotly is migrating from Mapbox to MapLibre: scatter_mapbox is deprecated
+    # in 6.x in favour of scatter_map, but scatter_map does not exist on the
+    # plotly 5.x this package still supports. Prefer the new one where it is
+    # available, which also silences the deprecation warning.
+    common = dict(
         lat="latitude",
         lon="longitude",
         hover_name="site_id",
         zoom=5,
         height=600,
         width=800,
-        mapbox_style="open-street-map",  # Alternative styles: "carto-positron", "stamen-terrain", etc.
-        title="Map Showing Location of Sites"
+        title="Map Showing Location of Sites",
     )
+    if hasattr(px, "scatter_map"):
+        fig = px.scatter_map(filtered_data, map_style="open-street-map", **common)
+    else:  # plotly < 6
+        fig = px.scatter_mapbox(filtered_data, mapbox_style="open-street-map",
+                                **common)
     
     # Customize marker appearance
     fig.update_traces(marker=dict(size=12, color='red', symbol='circle'))

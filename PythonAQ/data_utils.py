@@ -9,10 +9,14 @@ import numpy as np
 import pandas as pd
 
 __all__ = [
+    'bin_data',
     'calc_percentile',
     'cut_data',
+    'date_pad',
     'rolling_mean',
     'select_by_date',
+    'select_running',
+    'split_by_date',
     'time_average',
 ]
 
@@ -92,7 +96,8 @@ def _infer_base_freq(index):
 
 
 def time_average(df, avg_time='day', data_thresh=0, statistic='mean',
-                 percentile=None, date_col='date_time', vector_ws=False):
+                 percentile=None, date_col='date_time', vector_ws=False,
+                 interval=None):
     """Average a time series over a period, honouring a data-capture threshold.
 
     Port of openair's ``timeAverage``. Wind direction is averaged as a vector
@@ -111,9 +116,20 @@ def time_average(df, avg_time='day', data_thresh=0, statistic='mean',
     - date_col (str): Name of the datetime column.
     - vector_ws (bool): If True, also report the vector (rather than scalar)
       mean wind speed.
+    - interval (str or None): The series' true sampling interval, e.g. 'hour'.
+      Only used when `data_thresh` is set. Inferred from the data when None.
 
     Returns:
     - pd.DataFrame: Averaged data with `date_col` as a column.
+
+    Notes:
+    - Give `interval` when rows may be absent rather than present-and-NaN.
+      Capture is measured against a regular time base, and inferring that base
+      from the data uses the most common gap between observations - which is
+      wrong precisely when data is missing. An hourly series with every other
+      row absent looks like a complete two-hourly series, and reports 100%
+      capture on 50% of the data. Stating the interval removes the guess.
+      `date_pad` does the same job as a separate step.
     """
     if date_col not in df.columns:
         raise ValueError(f"Date column '{date_col}' not found in the DataFrame.")
@@ -142,8 +158,10 @@ def time_average(df, avg_time='day', data_thresh=0, statistic='mean',
     numeric = data.select_dtypes(include=[np.number])
 
     # Pad onto a regular time base so that absent rows count against capture,
-    # exactly as openair's datePad does.
-    base = _infer_base_freq(data.index)
+    # exactly as openair's datePad does. `interval` states that base explicitly;
+    # inferring it is a guess that fails in the case it most needs to handle.
+    base = (pd.tseries.frequencies.to_offset(_parse_avg_time(interval))
+            if interval is not None else _infer_base_freq(data.index))
     if base is not None and data_thresh > 0:
         full_index = pd.date_range(data.index.min(), data.index.max(), freq=base)
         numeric = numeric.reindex(numeric.index.union(full_index))
@@ -456,3 +474,217 @@ def calc_percentile(df, pollutant, percentile=(25, 50, 75, 95),
         frames.append(averaged.set_index(date_col)[pollutant]
                       .rename(f'percentile.{value:g}'))
     return pd.concat(frames, axis=1).reset_index(names=date_col)
+
+
+def date_pad(df, date_col='date_time', interval=None, type=None,
+             hemisphere='northern'):
+    """Pad a time series onto a complete, regular time base.
+
+    Port of openair's ``datePad``. Real monitoring data has gaps where rows are
+    simply absent rather than present-but-NaN, which quietly distorts anything
+    that counts observations per period: a day holding six rows looks fully
+    captured if you only count what is there.
+
+    Parameters:
+    - df (pd.DataFrame): Input data.
+    - date_col (str): Name of the datetime column.
+    - interval (str or None): Spacing to pad to, as a pandas offset alias or an
+      openair period name. Inferred from the data when None.
+    - type (str or None): Column identifying separate series, typically 'site'.
+      Each is padded over its own span rather than the whole frame's, so a site
+      that started reporting late does not gain years of empty rows.
+    - hemisphere (str): Unused; accepted so callers can pass it through.
+
+    Returns:
+    - pd.DataFrame: The input with rows inserted for every missing timestamp,
+      sorted by date. Inserted rows are NaN except for `date_col` and `type`.
+    """
+    if date_col not in df.columns:
+        raise ValueError(f"Date column '{date_col}' not found in the DataFrame.")
+
+    data = df.copy()
+    data[date_col] = pd.to_datetime(data[date_col])
+    data = data.dropna(subset=[date_col]).sort_values(date_col)
+    if data.empty:
+        return data.reset_index(drop=True)
+
+    if type is not None:
+        if type not in data.columns:
+            raise ValueError(f"Column '{type}' not found in the DataFrame.")
+        padded = [
+            date_pad(group, date_col=date_col, interval=interval).assign(**{type: key})
+            for key, group in data.groupby(type, observed=True, sort=True)
+        ]
+        return pd.concat(padded, ignore_index=True).sort_values(
+            [type, date_col]
+        ).reset_index(drop=True)
+
+    if interval is None:
+        offset = _infer_base_freq(pd.DatetimeIndex(data[date_col]))
+        if offset is None:
+            return data.reset_index(drop=True)
+    else:
+        offset = pd.tseries.frequencies.to_offset(_parse_avg_time(interval))
+
+    full = pd.date_range(data[date_col].min(), data[date_col].max(), freq=offset)
+    return (
+        data.set_index(date_col)
+        .reindex(data.set_index(date_col).index.union(full))
+        .rename_axis(date_col)
+        .reset_index()
+    )
+
+
+def split_by_date(df, dates, labels=None, date_col='date_time', name='split_by'):
+    """Split a series at given dates. Port of openair's ``splitByDate``.
+
+    Parameters:
+    - df (pd.DataFrame): Input data.
+    - dates (str or sequence): One or more cut points. N cut points give N+1
+      periods.
+    - labels (sequence or None): Names for the periods. Generated from the cut
+      points when None.
+    - date_col (str): Name of the datetime column.
+    - name (str): Name of the column added.
+
+    Returns:
+    - pd.DataFrame: The input with an ordered categorical column added.
+    """
+    if date_col not in df.columns:
+        raise ValueError(f"Date column '{date_col}' not found in the DataFrame.")
+
+    cuts = [pd.to_datetime(dates)] if isinstance(dates, str) else \
+        [pd.to_datetime(d) for d in dates]
+    cuts = sorted(cuts)
+    if not cuts:
+        raise ValueError('At least one split date is required.')
+
+    if labels is None:
+        labels = [f'before {cuts[0]:%d %b %Y}']
+        labels += [f'{a:%d %b %Y} to {b:%d %b %Y}'
+                   for a, b in zip(cuts[:-1], cuts[1:])]
+        labels.append(f'after {cuts[-1]:%d %b %Y}')
+    elif len(labels) != len(cuts) + 1:
+        raise ValueError(
+            f'{len(cuts)} split date(s) need {len(cuts) + 1} labels, '
+            f'got {len(labels)}.'
+        )
+
+    data = df.copy()
+    data[date_col] = pd.to_datetime(data[date_col])
+    edges = [pd.Timestamp.min] + cuts + [pd.Timestamp.max]
+    data[name] = pd.cut(data[date_col], bins=edges, labels=labels,
+                        right=False, ordered=True)
+    return data
+
+
+def select_running(df, pollutant, run_length=5, threshold=None,
+                   date_col='date_time', name='criterion', mode='flag'):
+    """Find runs of consecutive values at or above a threshold.
+
+    Port of openair's ``selectRunning``. Useful for isolating pollution
+    episodes, which are defined by persistence rather than by any single high
+    hour: one spike is not an episode, ten consecutive hours is.
+
+    Parameters:
+    - df (pd.DataFrame): Input data.
+    - pollutant (str): Column to test.
+    - run_length (int): Minimum number of consecutive observations.
+    - threshold (float or None): Value to test against. Defaults to the
+      pollutant's own 95th percentile.
+    - date_col (str): Datetime column, used to order the data.
+    - name (str): Name of the flag column added.
+    - mode (str): 'flag' adds a yes/no column; 'filter' returns only the rows
+      belonging to a qualifying run.
+
+    Returns:
+    - pd.DataFrame: Flagged or filtered data.
+    """
+    if pollutant not in df.columns:
+        raise ValueError(f"Column '{pollutant}' not found in the DataFrame.")
+    if mode not in ('flag', 'filter'):
+        raise ValueError("mode must be 'flag' or 'filter'.")
+    if run_length < 1:
+        raise ValueError('run_length must be at least 1.')
+
+    data = df.copy()
+    if date_col in data.columns:
+        data[date_col] = pd.to_datetime(data[date_col])
+        data = data.sort_values(date_col).reset_index(drop=True)
+
+    if threshold is None:
+        threshold = float(data[pollutant].quantile(0.95))
+
+    above = (data[pollutant] >= threshold).fillna(False)
+    # Number each unbroken stretch, then keep only those long enough. NaN counts
+    # as below, so a gap ends a run rather than silently bridging it.
+    block = (above != above.shift()).cumsum()
+    lengths = above.groupby(block).transform('size')
+    qualifies = above & (lengths >= run_length)
+
+    data[name] = np.where(qualifies, 'yes', 'no')
+    if mode == 'filter':
+        return data[qualifies].reset_index(drop=True)
+    return data
+
+
+def bin_data(df, x, y, bins=20, statistic='mean', conf_int=0.95, n_boot=200,
+             random_state=None):
+    """Bin one variable against another, with bootstrap intervals on each bin.
+
+    Port of openair's ``binData``. Answers "how does y behave across the range
+    of x?" with an honest uncertainty on each bin, rather than a single
+    regression line that hides where the data actually is.
+
+    Parameters:
+    - df (pd.DataFrame): Input data.
+    - x (str): Column to bin along.
+    - y (str): Column to summarise within each bin.
+    - bins (int or sequence): Number of equal-width bins, or explicit edges.
+    - statistic (str): 'mean' or 'median'.
+    - conf_int (float): Confidence level for the interval.
+    - n_boot (int): Bootstrap replicates.
+    - random_state (int or None): Seed, for reproducible intervals.
+
+    Returns:
+    - pd.DataFrame: One row per bin with the bin centre, count, the statistic
+      and its lower and upper bounds.
+    """
+    for column in (x, y):
+        if column not in df.columns:
+            raise ValueError(f"Column '{column}' not found in the DataFrame.")
+    if statistic not in ('mean', 'median'):
+        raise ValueError("statistic must be 'mean' or 'median'.")
+
+    data = df[[x, y]].replace([np.inf, -np.inf], np.nan).dropna()
+    if data.empty:
+        raise ValueError(f"No complete '{x}'/'{y}' pairs to bin.")
+
+    edges = (np.linspace(data[x].min(), data[x].max(), int(bins) + 1)
+             if np.isscalar(bins) else np.asarray(bins, dtype=float))
+    assigned = pd.cut(data[x], bins=edges, include_lowest=True, labels=False)
+
+    rng = np.random.default_rng(random_state)
+    tail = (1.0 - conf_int) / 2.0
+    rows = []
+    for index in range(len(edges) - 1):
+        values = data.loc[assigned == index, y].to_numpy(dtype=float)
+        centre = (edges[index] + edges[index + 1]) / 2.0
+        if values.size == 0:
+            rows.append({x: centre, 'n': 0, statistic: np.nan,
+                         'lower': np.nan, 'upper': np.nan})
+            continue
+
+        estimate = (np.median(values) if statistic == 'median'
+                    else np.mean(values))
+        if values.size == 1:
+            lower = upper = estimate
+        else:
+            draws = values[rng.integers(0, values.size, (n_boot, values.size))]
+            replicates = (np.median(draws, axis=1) if statistic == 'median'
+                          else np.mean(draws, axis=1))
+            lower, upper = np.quantile(replicates, [tail, 1.0 - tail])
+        rows.append({x: centre, 'n': int(values.size), statistic: estimate,
+                     'lower': float(lower), 'upper': float(upper)})
+
+    return pd.DataFrame(rows)

@@ -479,6 +479,29 @@ fig, summary = trend_level(df, 'NO2', x='month', y='hour', type='year')
 - `type` (str or None): panel variable; `None` for a single panel.
 - `statistic` (str): `'mean'`, `'median'`, `'max'`, `'min'` or `'frequency'`.
 
+### `time_prop`
+
+Stacked bars over time, split by the contribution of a category — the usual way
+source apportionment output is read.
+
+<p align="center"><img src="https://raw.githubusercontent.com/chris-r-uol/PythonAQ/main/docs/images/time_prop.png" alt="Time proportion plot" width="820"></p>
+
+```python
+from PythonAQ import time_prop
+
+fig, summary = time_prop(df, 'NO2', proportion='wd', avg_time='month')
+```
+
+- `proportion` (str): the splitting column — an existing category, a numeric
+  column split into quantiles, or anything `cut_data` understands.
+- `avg_time` (str): bar width in time.
+- `statistic` (str): `'mean'` or `'sum'`.
+- `normalise` (bool): scale every bar to 100%, to compare composition rather
+  than magnitude.
+
+Segments are each category's *share* of the period, so the bars total the
+period statistic rather than summing category means.
+
 ### `calendar`
 
 Daily values as a calendar heat map. Needs the `calendar` extra.
@@ -600,6 +623,59 @@ For Leeds Centre:
 | 2024 | 93.7 | 19.2 | 15.8 | 45.6 | 49.0 | 0 |
 | 2025 | 99.0 | 18.6 | 14.4 | 46.8 | 61.1 | 0 |
 
+### `conditional_quantile`
+
+`mod_stats` says how well a model does; this says *where* it fails. Modelled
+values are binned, and within each bin the spread of the corresponding
+observations is drawn.
+
+<p align="center"><img src="https://raw.githubusercontent.com/chris-r-uol/PythonAQ/main/docs/images/conditional_quantile.png" alt="Conditional quantile plot" width="700"></p>
+
+```python
+from PythonAQ import conditional_quantile
+
+fig, summary = conditional_quantile(df, obs='observed', mod='model')
+```
+
+A model can have a respectable correlation while being badly wrong at high
+concentrations — the range that usually matters most — and that shows up here
+as the median peeling away from the 1:1 line at the top of the range.
+
+- `bins` (int or sequence): bins across the modelled range.
+- `min_count` (int): bins with fewer pairs are dropped; a quantile of three
+  points is not informative.
+- `quantiles` (sequence): two nested pairs, default the 10/90 and 25/75.
+- `show_histograms` (bool): the marginal distributions, which show where the
+  data actually is — quantile bands alone say nothing about how many points
+  support them.
+
+### `taylor_diagram`
+
+Three statistics on one plot. The radius is the standard deviation, the angle
+is the correlation, and — because of how those combine — **the distance from a
+model's point to the reference point is its centred RMS error**.
+
+<p align="center"><img src="https://raw.githubusercontent.com/chris-r-uol/PythonAQ/main/docs/images/taylor_diagram.png" alt="Taylor diagram" width="620"></p>
+
+```python
+from PythonAQ import taylor_diagram
+
+fig, summary = taylor_diagram(df, obs='observed', mod=['model_a', 'model_b'])
+```
+
+The closer a point sits to the star, the better the model. Comparing several
+becomes a matter of looking.
+
+- `mod` (str or list): one or several modelled columns.
+- `group` (str or None): split the comparison, e.g. by season or site.
+- `normalise` (bool): divide by the observed standard deviation, so series on
+  different scales share one diagram.
+
+Returns `sd`, `r`, `centred_rmse` and `bias` per point. Bias is reported
+separately because the centred RMS error removes each series' mean by
+construction — a model that is uniformly 20 µg/m³ too high has zero centred
+error and sits exactly on the reference.
+
 ---
 
 ## Data utilities
@@ -620,6 +696,15 @@ daily = time_average(df, avg_time='day', data_thresh=75)
   periods below become `NaN`.
 - `statistic` (str): `'mean'`, `'median'`, `'max'`, `'min'`, `'sum'`, `'sd'`,
   `'frequency'`, `'data.cap'` or `'percentile'`.
+- `interval` (str or None): the series' true sampling interval, e.g. `'hour'`.
+  Only used when `data_thresh` is set.
+
+> **Give `interval` when rows may be absent.** Capture is measured against a
+> regular time base, and inferring that base from the data uses the most common
+> gap between observations — which is wrong exactly when data is missing. An
+> hourly series with every other row absent looks like a complete two-hourly
+> series and reports 100% capture on 50% of the data. `date_pad` does the same
+> job as a separate step.
 
 > **Wind direction is averaged as a vector**, not a scalar. Winds at 350° and
 > 10° average to 0°, due north, rather than the 180° a naive mean would give.
@@ -676,6 +761,71 @@ from PythonAQ import calc_percentile
 
 result = calc_percentile(df, 'NO2', percentile=[25, 50, 75, 95], avg_time='month')
 ```
+
+### `date_pad`
+
+Pad a series onto a complete, regular time base.
+
+```python
+from PythonAQ import date_pad
+
+padded = date_pad(df, interval='hour')
+```
+
+Real monitoring data has gaps where rows are simply *absent* rather than
+present-and-NaN, which quietly distorts anything that counts observations per
+period. Give `interval` when that is possible: the base is otherwise inferred
+from the most common gap between observations, which is wrong precisely when
+data is missing. An hourly series with every other row absent looks like a
+complete two-hourly series.
+
+- `type` (str or None): column identifying separate series, e.g. `'site'`.
+  Each is padded over its own span, so a site that started reporting late does
+  not gain years of empty rows.
+
+### `split_by_date`
+
+Split a series at given dates.
+
+```python
+from PythonAQ import split_by_date
+
+result = split_by_date(df, '2023-06-01', labels=['before', 'after'])
+```
+
+N cut points give N+1 periods, as an ordered categorical — so it drops straight
+into `type=` for before/after comparisons.
+
+### `select_running`
+
+Find runs of consecutive values at or above a threshold.
+
+```python
+from PythonAQ import select_running
+
+episodes = select_running(df, 'NO2', run_length=8, mode='filter')
+```
+
+Episodes are defined by persistence rather than by any single high hour: one
+spike is not an episode, eight consecutive hours is. A gap ends a run rather
+than silently bridging it.
+
+- `run_length` (int), `threshold` (float or None, defaults to the 95th
+  percentile), `mode` (`'flag'` or `'filter'`).
+
+### `bin_data`
+
+Bin one variable against another, with bootstrap intervals on each bin.
+
+```python
+from PythonAQ import bin_data
+
+result = bin_data(df, x='ws', y='NO2', bins=20)
+```
+
+Answers "how does y behave across the range of x?" with an honest uncertainty
+per bin, rather than a single regression line that hides where the data is.
+Returns the bin centre, count, statistic, and lower and upper bounds.
 
 ### `deseason_data` and `get_period`
 
@@ -756,12 +906,16 @@ the `modStats` metrics, the formulas follow the openair R source exactly.
 | `TheilSen` | `theil_sen_plot` | | `calendarPlot` | `calendar` |
 | `smoothTrend` | `smooth_trend_plot` | | `polarAnnulus` | `polar_annulus` |
 | `quickText` | `quick_text` | | `cutData` / `type` | `type=` everywhere |
+| `conditionalQuantile` | `conditional_quantile` | | `datePad` | `date_pad` |
+| `TaylorDiagram` | `taylor_diagram` | | `splitByDate` | `split_by_date` |
+| `timeProp` | `time_prop` | | `selectRunning` | `select_running` |
+| | | | `binData` | `bin_data` |
 
-**Not yet ported:** `polarDiff`, `timeProp`, `TaylorDiagram`,
-`conditionalQuantile`, `conditionalEval`, `distPlot`, `linearRelation`, the
-trajectory functions (`trajPlot`, `trajLevel`, `trajCluster`), the remaining
-smoothers (`GaussianSmooth`, `WhittakerSmooth`, `kzFilter`), and the
-`openairmaps` interactive maps, which are a separate package.
+**Not yet ported:** `polarDiff`, `conditionalEval`, `distPlot`,
+`linearRelation`, `runRegression`, the trajectory functions (`trajPlot`,
+`trajLevel`, `trajCluster`), the remaining smoothers (`GaussianSmooth`,
+`WhittakerSmooth`, `kzFilter`, `rollingQuantile`), and the `openairmaps`
+interactive maps, which are a separate package.
 
 **Two deliberate differences:**
 

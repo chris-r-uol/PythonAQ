@@ -39,6 +39,7 @@ from PythonAQ import (  # noqa: E402
     aq_stats,
     corr_plot,
     download_aurn_data,
+    conditional_quantile,
     import_aq_meta,
     map_sites,
     percentile_rose,
@@ -50,8 +51,10 @@ from PythonAQ import (  # noqa: E402
     scatter_plot,
     smooth_trend_plot,
     summary_plot,
+    taylor_diagram,
     theil_sen_plot,
     time_plot,
+    time_prop,
     time_variation,
     trend_level,
     wind_rose,
@@ -290,6 +293,27 @@ def main() -> int:
     # repository size.
     save(map_sites(metadata, sites=[SITE, 'LED6']), 'map_sites',
          width=820, height=520, scale=1.0)
+
+    # --- Model evaluation -----------------------------------------------------
+    # No model output ships with the package, so a persistence forecast and a
+    # deliberately damped variant stand in: enough to show what the plots say.
+    evaluation = aq[['date_time', 'NO2']].dropna().copy()
+    evaluation['persistence'] = evaluation['NO2'].shift(24)
+    evaluation['damped'] = evaluation['NO2'] * 0.6 + 8
+    evaluation = evaluation.dropna()
+
+    save(conditional_quantile(evaluation, obs='NO2', mod='damped',
+                              title='Conditional quantiles: a damped model')[0],
+         'conditional_quantile', width=800, height=700)
+
+    save(taylor_diagram(evaluation, obs='NO2', mod=['persistence', 'damped'],
+                        title='Taylor diagram: two stand-in models')[0],
+         'taylor_diagram', width=760, height=720)
+
+    # --- Time proportion ------------------------------------------------------
+    save(time_prop(aq, 'NO2', 'wd', avg_time='month',
+                   title='Monthly NO2 split by wind sector')[0],
+         'time_prop', width=1000, height=560)
 
     # --- calendar needs the optional plotly-calplot ---------------------------
     try:

@@ -31,9 +31,12 @@ import pandas as pd
 import PythonAQ
 from PythonAQ import (
     aq_stats,
+    bin_data,
     calc_percentile,
+    conditional_quantile,
     corr_plot,
     cut_data,
+    date_pad,
     deseason_data,
     download_aurn_data,
     download_noaa_data,
@@ -55,11 +58,15 @@ from PythonAQ import (
     rolling_mean,
     scatter_plot,
     select_by_date,
+    select_running,
     smooth_trend_plot,
+    split_by_date,
     summary_plot,
+    taylor_diagram,
     theil_sen_plot,
     time_average,
     time_plot,
+    time_prop,
     time_variation,
     trend_level,
     wind_rose,
@@ -459,6 +466,39 @@ def section_statistics(aq: pd.DataFrame, met: pd.DataFrame) -> None:
         print(f'\n  {pollutant}:')
         show(aq_stats(aq, pollutant, data_thresh=75), rows=5)
     used('aq_stats')
+
+    step('date_pad / split_by_date / select_running / bin_data')
+    padded = date_pad(aq, interval='hour')
+    print(f'  date_pad      : {len(aq):,} rows -> {len(padded):,} on a complete hourly base')
+    periods = split_by_date(aq, '2024-01-01', labels=['2022-2023', '2024-2025'])
+    print(f'  split_by_date : {periods.groupby("split_by", observed=True)["NO2"].mean().round(1).to_dict()}')
+    episodes = select_running(aq, 'NO2', run_length=8, mode='filter')
+    print(f'  select_running: {len(episodes):,} hours in runs of 8+ above the 95th percentile')
+    binned = bin_data(aq, 'ws', 'NO2', bins=10, random_state=0)
+    print(f'  bin_data      : NO2 falls from {binned["mean"].iloc[0]:.1f} to '
+          f'{binned["mean"].dropna().iloc[-1]:.1f} ug/m3 as wind speed rises')
+    used('date_pad', 'split_by_date', 'select_running', 'bin_data')
+
+    step('time_prop - monthly NO2 split by wind sector')
+    fig, proportions = time_prop(aq, 'NO2', 'wd', avg_time='month')
+    save(fig, 'time_prop', 'stacked monthly NO2 by wind direction')
+    used('time_prop')
+
+    step('conditional_quantile + taylor_diagram - model evaluation')
+    print('  no model output ships with the package, so a persistence forecast')
+    print('  and a deliberately damped variant stand in.')
+    evaluation = aq[['date_time', 'NO2']].dropna().copy()
+    evaluation['persistence'] = evaluation['NO2'].shift(24)
+    evaluation['damped'] = evaluation['NO2'] * 0.6 + 8
+    evaluation = evaluation.dropna()
+    fig, quantiles = conditional_quantile(evaluation, obs='NO2', mod='damped')
+    save(fig, 'conditional_quantile', 'where the damped model departs from 1:1')
+    fig, taylor = taylor_diagram(evaluation, obs='NO2',
+                                 mod=['persistence', 'damped'])
+    save(fig, 'taylor_diagram', 'both stand-in models against the observations')
+    show(taylor[['model', 'n', 'r', 'sd_mod', 'centred_rmse', 'bias']], decimals=3)
+    print('  the distance from each point to the reference IS its centred RMSE')
+    used('conditional_quantile', 'taylor_diagram')
 
     step('mod_stats - evaluating a 24-hour persistence forecast for NO2')
     print('  "model" = the value 24 hours earlier. A deliberately naive baseline,')

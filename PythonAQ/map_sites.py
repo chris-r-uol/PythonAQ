@@ -1,12 +1,20 @@
 import plotly.express as px
 
-def map_sites(data, sites=['LEED', 'LED6']):
+def map_sites(data, sites=['LEED', 'LED6'], map_style='carto-positron',
+              zoom=5, marker_colour='crimson'):
     '''
     Function for mapping the AURN sites.
     
     Parameters:
     data (pd.DataFrame): Metadata for the site locations with columns 'site_id', 'latitude', and 'longitude'.
     sites (str or list): A single site identifier or a list of site identifiers to be mapped.
+    map_style (str): Base map tiles. 'carto-positron' (default) and
+        'carto-darkmatter' are muted OpenStreetMap-derived styles, light and
+        dark respectively, which keep the markers legible; 'open-street-map'
+        is the full-colour standard style, which competes with the data.
+        All three need no access token.
+    zoom (int): Initial zoom level.
+    marker_colour (str): Colour of the site markers.
     
     Returns:
     fig (plotly.graph_objs._figure.Figure): A Plotly figure object representing the map of selected sites.
@@ -46,19 +54,18 @@ def map_sites(data, sites=['LEED', 'LED6']):
         lat="latitude",
         lon="longitude",
         hover_name="site_id",
-        zoom=5,
+        zoom=zoom,
         height=600,
         width=800,
         title="Map Showing Location of Sites",
     )
     if hasattr(px, "scatter_map"):
-        fig = px.scatter_map(filtered_data, map_style="open-street-map", **common)
+        fig = px.scatter_map(filtered_data, map_style=map_style, **common)
     else:  # plotly < 6
-        fig = px.scatter_mapbox(filtered_data, mapbox_style="open-street-map",
-                                **common)
+        fig = px.scatter_mapbox(filtered_data, mapbox_style=map_style, **common)
     
     # Customize marker appearance
-    fig.update_traces(marker=dict(size=12, color='red', symbol='circle'))
+    fig.update_traces(marker=dict(size=12, color=marker_colour, symbol='circle'))
     
     # Update layout for better appearance
     fig.update_layout(

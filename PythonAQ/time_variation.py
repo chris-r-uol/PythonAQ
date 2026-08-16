@@ -211,9 +211,12 @@ def time_variation(df, pollutant, date_col='date_time', statistic='mean',
     for row, col in [(1, 1), (2, 1), (2, 2), (3, 1)]:
         fig.update_yaxes(title_text=axis_title, row=row, col=col)
 
+    # title=None means no title, rather than the word "None" followed by the
+    # note, which is what interpolating it straight into an f-string gives.
     interval_note = (f'{statistic}, {conf_int:.0%} CI' if ci else statistic)
+    heading = f'{title} ({interval_note})' if title else None
     fig.update_layout(
-        title=f'{title} ({interval_note})',
+        title=heading,
         template='plotly_white', width=width, height=height,
         hovermode='x unified',
         legend=dict(orientation='h', yanchor='bottom', y=1.04,

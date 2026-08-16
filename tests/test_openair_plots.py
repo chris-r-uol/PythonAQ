@@ -448,3 +448,22 @@ class TestPolarAnnulus:
         before = structured_df.copy()
         polar_annulus(structured_df, 'NO2')
         pd.testing.assert_frame_equal(structured_df, before)
+
+
+class TestTitleHandling:
+    """title=None must mean no title, not the string 'None'."""
+
+    @pytest.mark.parametrize('call', [
+        lambda df: time_variation(df, 'NO2', title=None, random_state=0)[0],
+        lambda df: percentile_rose(df, 'NO2', title=None)[0],
+        lambda df: trend_level(df, 'NO2', title=None)[0],
+        lambda df: polar_annulus(df, 'NO2', title=None)[0],
+    ])
+    def test_none_title_never_renders_the_word_none(self, structured_df, call):
+        text = call(structured_df).layout.title.text
+        assert text is None or 'None' not in text
+
+    def test_a_given_title_is_still_used(self, structured_df):
+        fig, _ = time_variation(structured_df, 'NO2', title='Leeds',
+                                random_state=0)
+        assert fig.layout.title.text.startswith('Leeds')

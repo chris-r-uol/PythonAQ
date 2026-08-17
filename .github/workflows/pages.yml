@@ -3,14 +3,19 @@ name: Pages
 # Publishes docs/ to GitHub Pages, which serves the guide at
 # <owner>.github.io/PythonAQ/guide/.
 #
-# configure-pages runs with enablement: true, so the first run turns Pages on
-# for the repository and sets the source to GitHub Actions, rather than needing
-# that done by hand under Settings > Pages first.
+# Pages must be enabled once by hand: Settings > Pages, source "GitHub Actions".
 #
-# Note what that means: everything under docs/ becomes publicly readable at a
-# github.io address, whatever the repository's own visibility. That is the
+# enablement: true is set below and does not remove that step. Creating a Pages
+# site needs admin rights, which GITHUB_TOKEN does not have whatever the
+# workflow's permissions block says; pages: write allows deploying to Pages, not
+# creating it. Left on because it is harmless and would cover the case where the
+# site is later removed, but the first run still fails with "Resource not
+# accessible by integration" until the switch is flipped.
+#
+# Note what enabling it means: everything under docs/ becomes publicly readable
+# at a github.io address, whatever the repository's own visibility. That is the
 # intent here, since docs/ holds the guide and the README figures and nothing
-# else, but it is the reason this is opt-in rather than a sensible default.
+# else, but it is why this is a deliberate choice rather than a default.
 on:
   push:
     branches: [main]

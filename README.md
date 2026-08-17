@@ -1,7 +1,7 @@
 # PythonAQ
 
 [![Tests](https://github.com/chris-r-uol/PythonAQ/actions/workflows/tests.yml/badge.svg)](https://github.com/chris-r-uol/PythonAQ/actions/workflows/tests.yml)
-[![Python](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)](https://www.python.org)
+[![Python](https://img.shields.io/badge/python-3.9%20%E2%80%93%203.14-blue)](https://www.python.org)
 [![Licence](https://img.shields.io/badge/licence-MIT-green)](https://github.com/chris-r-uol/PythonAQ/blob/main/LICENSE)
 
 Air quality data analysis and visualisation for Python, following the R
@@ -991,7 +991,7 @@ pytest
 ```
 
 The tests use synthetic data throughout and never touch the network, so they run
-offline and deterministically. CI covers Python 3.9–3.13 on Linux, plus macOS
+offline and deterministically. CI covers Python 3.9–3.14 on Linux, plus macOS
 and Windows.
 
 To rebuild the figures in this manual after changing a plotting function:

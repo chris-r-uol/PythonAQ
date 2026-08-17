@@ -5,6 +5,7 @@
 #   pip install 'PythonAQ[calendar]'  # calendar plot (plotly-calplot, needs pandas<3)
 #   pip install 'PythonAQ[app]'       # Streamlit demo application
 #   pip install 'PythonAQ[dev]'       # test and lint tooling
+#   pip install 'PythonAQ[docs]'      # static image export, for the README figures
 
 numpy>=1.24
 pandas>=2.0

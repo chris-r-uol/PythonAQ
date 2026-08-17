@@ -1,0 +1,40 @@
+name: Pages
+
+# Publishes docs/ to GitHub Pages, which serves the guide at
+# <owner>.github.io/PythonAQ/guide/.
+#
+# This needs Pages enabled for the repository with "GitHub Actions" as the
+# source, under Settings > Pages. Without that the deploy step fails; nothing
+# else in CI is affected.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish rather than cancelling it mid-publish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+      - id: deployment
+        uses: actions/deploy-pages@v4

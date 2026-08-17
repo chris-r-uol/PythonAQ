@@ -1,0 +1,131 @@
+name: Publish
+
+# Publishes to PyPI via Trusted Publishing, so no API token is stored anywhere.
+# PyPI verifies a short-lived OpenID Connect token minted by GitHub for this
+# repository, workflow and environment, and mints an upload token in return.
+#
+# ONE-TIME SETUP, both on PyPI and here:
+#
+#  1. On PyPI, add a trusted publisher for the project
+#     (https://pypi.org/manage/project/PythonAQ/settings/publishing/, or for a
+#     project that does not exist yet, https://pypi.org/manage/account/publishing/):
+#       Owner:           chris-r-uol
+#       Repository:      PythonAQ
+#       Workflow name:   publish.yml
+#       Environment:     pypi
+#     Repeat on test.pypi.org with environment "testpypi" if you want the
+#     rehearsal path below.
+#
+#  2. In this repository, create the environments under
+#     Settings > Environments: "pypi" and, optionally, "testpypi".
+#     Adding required reviewers to "pypi" means a release waits for an explicit
+#     approval before anything is uploaded, which is worth having: a PyPI
+#     version number can never be reused, even after deletion.
+#
+# Publishing then happens by creating a GitHub release. Nothing is uploaded on
+# an ordinary push.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Where to upload
+        required: true
+        default: testpypi
+        type: choice
+        options: [testpypi, pypi]
+
+jobs:
+  build:
+    name: Build and check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build the sdist and wheel
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+
+      - name: Check the metadata renders
+        # Catches a long_description PyPI would reject, which is otherwise only
+        # discovered after an upload that cannot be undone.
+        run: python -m twine check dist/*
+
+      - name: Check the version matches the tag
+        # The version has one source, PythonAQ/__init__.py, and the tag is
+        # written by hand. A release tagged v0.5.1 that builds 0.5.0 would
+        # publish under the wrong number, and PyPI never lets a version be
+        # reused, so this is worth failing on rather than discovering later.
+        if: github.event_name == 'release'
+        run: |
+          python -m pip install --quiet -e .
+          BUILT=$(python -c "import PythonAQ; print(PythonAQ.__version__)")
+          TAG="${GITHUB_REF_NAME#v}"
+          echo "tag $TAG, package $BUILT"
+          if [ "$BUILT" != "$TAG" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package version $BUILT"
+            exit 1
+          fi
+
+      - name: Install from the built sdist
+        # The wheel is what most people get, but pip falls back to the sdist,
+        # and a sdist missing a file still builds a wheel that works locally.
+        run: |
+          python -m venv /tmp/sdist-check
+          /tmp/sdist-check/bin/python -m pip install --quiet dist/*.tar.gz
+          cd /tmp && /tmp/sdist-check/bin/python -c "
+          import PythonAQ
+          names = [n for n in PythonAQ.__all__ if not n.startswith('__')]
+          print(f'{PythonAQ.__version__}: {len(names)} public functions')
+          assert len(names) > 0
+          "
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: distributions
+          path: dist/
+
+  testpypi:
+    name: Publish to TestPyPI
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'testpypi'
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/PythonAQ
+    permissions:
+      id-token: write   # required to mint the OIDC token; no password needed
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: distributions
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          # TestPyPI accumulates rehearsals; do not fail a dry run over one.
+          skip-existing: true
+
+  pypi:
+    name: Publish to PyPI
+    needs: build
+    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.target == 'pypi')
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/PythonAQ
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: distributions
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1

@@ -36,6 +36,7 @@ actually renders.
 - [Guide](#guide)
 - [Worked example](#worked-example)
 - [Development](#development)
+- [Releasing](#releasing)
 - [Licence](#licence)
 
 ---
@@ -1002,6 +1003,59 @@ python examples/build_readme_figures.py
 ```
 
 ---
+
+## Releasing
+
+Publishing is automated but deliberately gated. It happens when a **GitHub
+release** is created, never on an ordinary push.
+
+```bash
+# 1. bump the version (one source of truth)
+#    PythonAQ/__init__.py  ->  __version__ = "0.5.1"
+# 2. merge, tag and release
+git tag -a v0.5.1 -m "PythonAQ 0.5.1"
+git push origin v0.5.1
+gh release create v0.5.1 --title "PythonAQ 0.5.1" --notes-from-tag --verify-tag --latest
+```
+
+The `Publish` workflow then builds an sdist and a wheel, runs `twine check`,
+**verifies the tag matches the packaged version**, installs from the sdist to
+prove it is complete, and uploads to PyPI.
+
+Uploads use [Trusted Publishing](https://docs.pypi.org/trusted-publishers/):
+PyPI verifies a short-lived OpenID Connect token minted by GitHub for this
+specific repository, workflow and environment, and issues an upload token in
+return. **No API token is stored in the repository**, so there is no secret to
+leak or rotate.
+
+### One-time setup
+
+**On PyPI** — add a trusted publisher at
+[pypi.org/manage/account/publishing](https://pypi.org/manage/account/publishing/)
+(for a project that does not exist yet) or the project's *Publishing* settings:
+
+| Field | Value |
+|---|---|
+| Owner | `chris-r-uol` |
+| Repository | `PythonAQ` |
+| Workflow name | `publish.yml` |
+| Environment | `pypi` |
+
+**In this repository** — create the environment under *Settings → Environments*
+named `pypi`. Adding a required reviewer there means a release waits for an
+explicit approval before anything uploads, which is worth having: **a PyPI
+version number can never be reused**, even after deletion.
+
+### Rehearsing
+
+Repeat both steps on [test.pypi.org](https://test.pypi.org) with the
+environment named `testpypi`, then run the workflow manually:
+
+```bash
+gh workflow run publish.yml -f target=testpypi
+```
+
+That path uses `skip-existing`, so repeated rehearsals do not fail.
 
 ## Contributing
 

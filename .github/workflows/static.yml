@@ -36,8 +36,11 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          # Upload entire repository
-          path: '.'
+          # Only docs/, not the whole repository. Uploading '.' publishes every
+          # file as a static asset, including the package source and anything
+          # added later, and puts the guide at /docs/guide/ with no index at the
+          # root. docs/ holds the guide and the README figures and nothing else.
+          path: './docs'
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5

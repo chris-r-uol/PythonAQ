@@ -3,9 +3,14 @@ name: Pages
 # Publishes docs/ to GitHub Pages, which serves the guide at
 # <owner>.github.io/PythonAQ/guide/.
 #
-# This needs Pages enabled for the repository with "GitHub Actions" as the
-# source, under Settings > Pages. Without that the deploy step fails; nothing
-# else in CI is affected.
+# configure-pages runs with enablement: true, so the first run turns Pages on
+# for the repository and sets the source to GitHub Actions, rather than needing
+# that done by hand under Settings > Pages first.
+#
+# Note what that means: everything under docs/ becomes publicly readable at a
+# github.io address, whatever the repository's own visibility. That is the
+# intent here, since docs/ holds the guide and the README figures and nothing
+# else, but it is the reason this is opt-in rather than a sensible default.
 on:
   push:
     branches: [main]
@@ -33,6 +38,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+        with:
+          # Turn Pages on if it is not already, instead of failing.
+          enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
           path: docs

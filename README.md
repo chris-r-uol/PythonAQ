@@ -925,13 +925,10 @@ the `modStats` metrics, the formulas follow the openair R source exactly.
 `WhittakerSmooth`, `kzFilter`, `rollingQuantile`), and the `openairmaps`
 interactive maps, which are a separate package.
 
-**Two deliberate differences:**
+**One deliberate difference:**
 
 - `time_average` averages wind direction as a vector but keeps the *scalar*
   mean wind speed. Pass `vector_ws=True` for the vector magnitude.
-- `cut_data(type='daylight')` uses a fixed 07:00–19:00 window rather than
-  openair's solar elevation calculation. Adequate for coarse splits; replace it
-  before relying on it at high latitude or near the solstices.
 
 ---
 

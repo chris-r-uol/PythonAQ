@@ -5,8 +5,12 @@ a data-capture threshold, date selection, rolling means and the conditioning
 splits (season, weekday, ...) that openair calls ``type``.
 """
 
+import warnings
+
 import numpy as np
 import pandas as pd
+
+from .solar import is_daylight
 
 __all__ = [
     'bin_data',
@@ -369,8 +373,10 @@ def cut_data(df, type='season', date_col='date_time', hemisphere='northern',
     - date_col (str): Name of the datetime column.
     - hemisphere (str): 'northern' or 'southern', for season definitions.
     - n_levels (int): Number of quantile levels when splitting a numeric column.
-    - latitude, longitude (float): Reserved for a future solar-position based
-      'daylight' split; currently a fixed ?? hour approximation is used.
+    - latitude, longitude (float): Site position in degrees north and east,
+      used by type='daylight' to work out whether the sun was actually up.
+      Without them 'daylight' falls back to a fixed 07:00-19:00 window and
+      warns, because that window is wrong by hours outside the tropics.
 
     Returns:
     - pd.DataFrame: Input data with a categorical column named `type` added.
@@ -429,11 +435,25 @@ def cut_data(df, type='season', date_col='date_time', hemisphere='northern',
     elif type == 'hour':
         data[type] = dates.dt.hour
     elif type == 'daylight':
-        # Approximation: openair uses solar elevation. Without a location we
-        # fall back to a fixed window, which is adequate for coarse splits.
-        hours = dates.dt.hour
+        if latitude is None or longitude is None:
+            # A fixed window is not merely approximate away from the equator:
+            # at 54 degrees north it mislabels five hours a day in midsummer,
+            # and in the opposite direction in midwinter. Anyone comparing
+            # daytime with nighttime across seasons would be reading that
+            # error rather than their data, so say so rather than imply a
+            # precision this branch does not have.
+            warnings.warn(
+                "cut_data(type='daylight') without latitude and longitude "
+                'falls back to a fixed 07:00-19:00 window, which is wrong by '
+                'up to several hours a day away from the equator. Pass '
+                'latitude= and longitude= for a real sunrise/sunset split.',
+                UserWarning, stacklevel=2,
+            )
+            daylight = ((dates.dt.hour >= 7) & (dates.dt.hour < 19)).to_numpy()
+        else:
+            daylight = is_daylight(dates, latitude, longitude)
         data[type] = pd.Categorical(
-            np.where((hours >= 7) & (hours < 19), 'daylight', 'nighttime'),
+            np.where(daylight, 'daylight', 'nighttime'),
             categories=['daylight', 'nighttime'], ordered=True,
         )
     else:

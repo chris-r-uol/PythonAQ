@@ -69,6 +69,7 @@ from .data_utils import (
     time_average,
 )
 from .deweather_deseason import deseason_data
+from .solar import is_daylight, solar_elevation
 from .text import quick_text
 from .utilities import e_sat, get_period, rh
 
@@ -111,11 +112,13 @@ __all__ = [
     "deseason_data",
     "e_sat",
     "get_period",
+    "is_daylight",
     "quick_text",
     "rh",
     "rolling_mean",
     "select_by_date",
     "select_running",
+    "solar_elevation",
     "split_by_date",
     "time_average",
     "__version__",

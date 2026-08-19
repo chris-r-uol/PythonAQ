@@ -208,10 +208,15 @@ class TestCutData:
     @pytest.mark.parametrize('type_,expected', [
         ('season', {'winter (DJF)', 'spring (MAM)', 'summer (JJA)', 'autumn (SON)'}),
         ('weekend', {'weekday', 'weekend'}),
-        ('daylight', {'daylight', 'nighttime'}),
     ])
     def test_category_sets(self, aq_df, type_, expected):
         assert set(cut_data(aq_df, type=type_)[type_].dropna().unique()) == expected
+
+    def test_daylight_categories_when_unlocated(self, aq_df):
+        """Unlocated 'daylight' still splits, but says it is approximating."""
+        with pytest.warns(UserWarning, match='fixed 07:00-19:00 window'):
+            values = cut_data(aq_df, type='daylight')['daylight']
+        assert set(values.dropna().unique()) == {'daylight', 'nighttime'}
 
     def test_weekday_is_ordered_from_monday(self, aq_df):
         values = cut_data(aq_df, type='weekday')['weekday']

@@ -34,76 +34,13 @@ def _to_components(ws, wd):
     return ws * np.sin(radians), ws * np.cos(radians)
 
 
-@conditionable
-def polar_plot(
-    df,
-    ws_col='ws',
-    wd_col='wd',
-    conc_col='NO2',
-    ws_bins=30,
-    wd_bins=72,
-    color_palette='Spectral_r',
-    title='Polar Plot of Concentration',
-    vmin=None,
-    vmax=None,
-    fig_width=800,
-    fig_height=800,
-    min_count=3,
-    n_splines=10,
-    uncertainty=None,
-    render='raster',
-    resolution=300,
-    n_contours=14,
-    exclude_missing=True,
-    exclude_distance=None,
-    upper_limit=None,
-    ws_limit='auto',
-):
-    """Create a bivariate polar plot of concentration by wind speed and direction.
+def _prepare_polar_data(df, ws_col, wd_col, conc_col, ws_limit):
+    """Clean the inputs and resolve the radial extent.
 
-    Parameters:
-    - df (pd.DataFrame): DataFrame containing wind data and concentrations.
-    - ws_col (str): Column name for wind speed.
-    - wd_col (str): Column name for wind direction, in degrees.
-    - conc_col (str): Column name for concentration.
-    - ws_bins (int): Wind speed bins used when aggregating before the fit.
-    - wd_bins (int): Wind direction bins used when aggregating before the fit.
-    - color_palette (str or list): Plotly colour scale.
-    - title (str): Title of the plot.
-    - vmin, vmax (float or None): Colour scale limits.
-    - fig_width, fig_height (int): Figure size in pixels.
-    - min_count (int): Minimum observations per bin for it to inform the fit.
-    - n_splines (int): Splines per dimension of the tensor-product smooth.
-    - uncertainty (float or None): Confidence width for the prediction interval
-      used to blank untrustworthy regions, e.g. 0.95. None disables the check.
-    - render (str): 'raster' for a continuous surface (default), 'contour' for
-      filled contour bands, or 'tile' for the original one-polygon-per-bin
-      rendering.
-    - resolution (int): Grid points per axis for the predicted surface. Higher
-      is smoother and slower; only used by 'raster' and 'contour'.
-    - n_contours (int): Number of bands when render='contour'.
-    - exclude_missing (bool): Blank areas of the grid that sit too far from any
-      observation, so the surface is not extrapolated into empty sectors.
-    - exclude_distance (float or None): How far from an observation counts as
-      too far, in wind speed units. Defaults to 4% of the maximum wind speed.
-    - upper_limit (float or None): Blank predictions above this concentration.
-      None keeps them all.
-    - ws_limit (str or float): Radial extent. 'auto' (default) uses the 99th
-      percentile of wind speed, since the rare highest speeds are too sparse to
-      smooth and would otherwise leave most of the circle blank; 'max' uses the
-      full observed range; a number sets it explicitly.
-
-    Returns:
-    - fig (plotly.graph_objects.Figure): The resulting polar plot.
+    Split out from `polar_plot` so that `polar_diff` can resolve one extent
+    across both of its datasets: two surfaces drawn to different radii cannot
+    meaningfully be subtracted.
     """
-    for col in [ws_col, wd_col, conc_col]:
-        if col not in df.columns:
-            raise ValueError(f"Column '{col}' not found in DataFrame.")
-    if render not in ('raster', 'contour', 'tile'):
-        raise ValueError("render must be 'raster', 'contour' or 'tile'.")
-    if resolution < 20:
-        raise ValueError('resolution must be at least 20.')
-
     data = df[[ws_col, wd_col, conc_col]].dropna().copy()
     data = data[data[ws_col] >= 0]
     if data.empty:
@@ -118,7 +55,17 @@ def polar_plot(
         ws_max = float(ws_limit)
     if ws_max <= 0:
         raise ValueError('ws_limit must resolve to a positive wind speed.')
+    return data, ws_max
 
+
+def _polar_surface(data, ws_col, wd_col, conc_col, ws_max, ws_bins, wd_bins,
+                   min_count, n_splines, render, resolution, uncertainty,
+                   upper_limit, exclude_missing, exclude_distance):
+    """Fit the smooth and predict it onto a grid.
+
+    Returns (grid_u, grid_v, Z, ws_bins_array, wd_bins_array). Z carries NaN
+    wherever the fit is not supported by data.
+    """
     ws_bins_array = np.linspace(float(data[ws_col].min()), ws_max, ws_bins + 1)
     wd_bins_array = np.linspace(0, 360, wd_bins + 1)
     data['ws_bin'] = pd.cut(data[ws_col], bins=ws_bins_array, labels=False,
@@ -198,6 +145,86 @@ def polar_plot(
             'Every grid cell was excluded. Try exclude_missing=False, a larger '
             'exclude_distance, or a less strict uncertainty.'
         )
+
+    return grid_u, grid_v, Z, ws_bins_array, wd_bins_array
+
+
+@conditionable
+def polar_plot(
+    df,
+    ws_col='ws',
+    wd_col='wd',
+    conc_col='NO2',
+    ws_bins=30,
+    wd_bins=72,
+    color_palette='Spectral_r',
+    title='Polar Plot of Concentration',
+    vmin=None,
+    vmax=None,
+    fig_width=800,
+    fig_height=800,
+    min_count=3,
+    n_splines=10,
+    uncertainty=None,
+    render='raster',
+    resolution=300,
+    n_contours=14,
+    exclude_missing=True,
+    exclude_distance=None,
+    upper_limit=None,
+    ws_limit='auto',
+):
+    """Create a bivariate polar plot of concentration by wind speed and direction.
+
+    Parameters:
+    - df (pd.DataFrame): DataFrame containing wind data and concentrations.
+    - ws_col (str): Column name for wind speed.
+    - wd_col (str): Column name for wind direction, in degrees.
+    - conc_col (str): Column name for concentration.
+    - ws_bins (int): Wind speed bins used when aggregating before the fit.
+    - wd_bins (int): Wind direction bins used when aggregating before the fit.
+    - color_palette (str or list): Plotly colour scale.
+    - title (str): Title of the plot.
+    - vmin, vmax (float or None): Colour scale limits.
+    - fig_width, fig_height (int): Figure size in pixels.
+    - min_count (int): Minimum observations per bin for it to inform the fit.
+    - n_splines (int): Splines per dimension of the tensor-product smooth.
+    - uncertainty (float or None): Confidence width for the prediction interval
+      used to blank untrustworthy regions, e.g. 0.95. None disables the check.
+    - render (str): 'raster' for a continuous surface (default), 'contour' for
+      filled contour bands, or 'tile' for the original one-polygon-per-bin
+      rendering.
+    - resolution (int): Grid points per axis for the predicted surface. Higher
+      is smoother and slower; only used by 'raster' and 'contour'.
+    - n_contours (int): Number of bands when render='contour'.
+    - exclude_missing (bool): Blank areas of the grid that sit too far from any
+      observation, so the surface is not extrapolated into empty sectors.
+    - exclude_distance (float or None): How far from an observation counts as
+      too far, in wind speed units. Defaults to 4% of the maximum wind speed.
+    - upper_limit (float or None): Blank predictions above this concentration.
+      None keeps them all.
+    - ws_limit (str or float): Radial extent. 'auto' (default) uses the 99th
+      percentile of wind speed, since the rare highest speeds are too sparse to
+      smooth and would otherwise leave most of the circle blank; 'max' uses the
+      full observed range; a number sets it explicitly.
+
+    Returns:
+    - fig (plotly.graph_objects.Figure): The resulting polar plot.
+    """
+    for col in [ws_col, wd_col, conc_col]:
+        if col not in df.columns:
+            raise ValueError(f"Column '{col}' not found in DataFrame.")
+    if render not in ('raster', 'contour', 'tile'):
+        raise ValueError("render must be 'raster', 'contour' or 'tile'.")
+    if resolution < 20:
+        raise ValueError('resolution must be at least 20.')
+
+    data, ws_max = _prepare_polar_data(df, ws_col, wd_col, conc_col, ws_limit)
+    grid_u, grid_v, Z, ws_bins_array, wd_bins_array = _polar_surface(
+        data, ws_col, wd_col, conc_col, ws_max, ws_bins, wd_bins, min_count,
+        n_splines, render, resolution, uncertainty, upper_limit,
+        exclude_missing, exclude_distance,
+    )
 
     if vmin is None:
         vmin = min(0.0, float(np.nanmin(Z)))

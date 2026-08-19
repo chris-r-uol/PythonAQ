@@ -38,6 +38,7 @@ from .corr_plot import corr_plot
 from .map_sites import map_sites
 from .percentile_rose import percentile_rose
 from .polar_annulus import polar_annulus
+from .polar_diff import polar_diff
 from .polar_cluster import polar_cluster
 from .polar_frequency import polar_frequency_plot
 from .polar_plot import polar_plot
@@ -88,6 +89,7 @@ __all__ = [
     "percentile_rose",
     "polar_annulus",
     "polar_cluster",
+    "polar_diff",
     "polar_frequency_plot",
     "polar_plot",
     "pollutant_rose",

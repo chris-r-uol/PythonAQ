@@ -21,7 +21,7 @@ dependency and does not clash with its module name (``calendar_plot``), so it
 stays lazy and only raises if it is actually used.
 """
 
-__version__ = "0.5.1"
+__version__ = "1.0.0"
 
 # Data retrieval and parsing
 from .data import (

@@ -10,8 +10,8 @@ colour scales.
 import numpy as np
 import plotly.graph_objects as go
 
-from .polar_plot import (_add_polar_axes, _polar_surface, _prepare_polar_data,
-                         _to_components)
+from .polar_plot import (_add_polar_axes, _polar_surface,
+                         _prepare_polar_data)
 from .text import quick_text
 
 __all__ = ['polar_diff']
@@ -51,8 +51,13 @@ def polar_diff(
       on decreases and red on increases.
     - title (str or None): Plot title. None builds one from `conc_col`.
     - limit (float or None): Colour scale extent. The scale always runs from
-      -limit to +limit; None uses the largest absolute difference. Set it
-      explicitly to compare several difference plots against each other.
+      -limit to +limit. None uses the 99th percentile of the absolute
+      difference, not the maximum: the largest differences sit at the rim of
+      the coverage mask where each fit is least supported, and letting a
+      handful of those cells set the scale washes out the interior where the
+      data actually is. Differences beyond the limit are drawn in the end
+      colour. Set it explicitly to compare several difference plots against
+      each other, or to see the full range.
     - fig_width, fig_height (int): Figure size in pixels.
     - min_count (int): Minimum observations per bin for it to inform a fit.
     - n_splines (int): Splines per dimension of each tensor-product smooth.
@@ -117,11 +122,12 @@ def polar_diff(
         )
 
     if limit is None:
+        # The 99th percentile rather than the maximum: see the note on `limit`.
         # Floored, so that two periods which happen to be identical render as
         # a flat "no change" surface rather than collapsing the colour scale
         # to a single point. Comparing a period against itself is a reasonable
         # thing to do when checking a pipeline.
-        limit = max(float(np.nanmax(np.abs(difference))), 1e-9)
+        limit = max(float(np.nanpercentile(np.abs(difference), 99)), 1e-9)
 
     label = quick_text(conc_col)
     heading = title if title is not None else f'Change in {label}'

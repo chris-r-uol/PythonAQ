@@ -52,9 +52,11 @@ dev = [
     "pytest-cov>=4.0",
     "flake8>=6.0",
 ]
-# Static image export for the README figures, via examples/build_readme_figures.py.
-# kaleido is pinned below 1.0 because plotly 5.x drives the older API.
-docs = ["kaleido<1.0"]
+# Building the documentation: static image export for the README figures via
+# examples/build_readme_figures.py, and the parquet cache that
+# examples/build_guide.py reads so the guide can be rebuilt without hitting the
+# network. kaleido is pinned below 1.0 because plotly 5.x drives the older API.
+docs = ["kaleido<1.0", "pyarrow>=10.0", "pillow>=9.0"]
 
 [project.urls]
 Homepage = "https://github.com/chris-r-uol/PythonAQ"

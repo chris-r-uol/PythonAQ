@@ -32,6 +32,7 @@ actually renders.
 - [Model evaluation](#model-evaluation)
 - [Data utilities](#data-utilities)
 - [Meteorological helpers](#meteorological-helpers)
+- [Upgrading to 1.0](#upgrading-to-10)
 - [Relationship to openair](#relationship-to-openair)
 - [Guide](#guide)
 - [Worked example](#worked-example)
@@ -381,6 +382,29 @@ fig, summary = polar_annulus(df, 'NO2', period='hour')
 - `smooth` (bool), `sigma` (tuple): smoothing, which wraps at the cyclic edges
   so there is no seam at north.
 
+### `polar_diff`
+
+What changed between two periods, by wind sector — the question behind
+most before-and-after work, and one the eye cannot answer from two polar
+plots side by side. Each period is fitted separately and the surfaces
+subtracted.
+
+The colour scale is forced to be symmetric about zero, so white always
+means no change; a diverging scale centred anywhere else would misstate
+the sign. A sector is drawn only where *both* periods support a fit, so
+wind directions sampled in one period and not the other are left blank
+rather than reported as a large change against nothing.
+
+<p align="center"><img src="https://raw.githubusercontent.com/chris-r-uol/PythonAQ/main/docs/images/polar_diff.png" alt="Polar difference plot" width="560"></p>
+
+```python
+from PythonAQ import polar_diff
+
+before = df[df['date_time'] < '2024-01-01']
+after = df[df['date_time'] >= '2024-01-01']
+polar_diff(before, after, conc_col='NO2').show()
+```
+
 ### `polar_cluster`
 
 K-means clustering in polar coordinates, to group conditions that behave alike.
@@ -542,6 +566,43 @@ fig, summary = summary_plot(df[['date_time', 'NO2', 'PM10', 'O3']])
 The summary `DataFrame` gives capture rate, missing count, min, max, mean,
 median and 95th percentile per column.
 
+### `dist_plot`
+
+The shape of a distribution rather than a summary of it. Concentrations
+are bounded below at zero and right-skewed, so the mean sits well above
+the mode and hides whatever structure is there.
+
+`kind='cdf'` reads off percentiles directly, `kind='histogram'` avoids
+the kernel density estimate placing weight below zero where no data can
+be, and `log_x=True` shows the bulk and the tail at once.
+
+<p align="center"><img src="https://raw.githubusercontent.com/chris-r-uol/PythonAQ/main/docs/images/dist_plot.png" alt="Distribution plot" width="640"></p>
+
+```python
+from PythonAQ import dist_plot
+
+dist_plot(df, ['NO2', 'PM2.5'], kind='density').show()
+```
+
+### `linear_relation`
+
+How the relationship between two pollutants moves over time. The slope
+describes the source rather than the amount — a change in it is a change
+in what is emitting, not merely in how much — so it often says more than
+either series alone.
+
+The band is the standard error of the slope within each period. It
+describes the fit, not the measurement: a tight band on a badly specified
+relationship is still tight.
+
+<p align="center"><img src="https://raw.githubusercontent.com/chris-r-uol/PythonAQ/main/docs/images/linear_relation.png" alt="Linear relation over time" width="640"></p>
+
+```python
+from PythonAQ import linear_relation
+
+fig, summary = linear_relation(df, x='NOx', y='NO2', period='month')
+```
+
 ### `scatter_plot`
 
 Two variables against each other, with optional linear and LOWESS fits.
@@ -587,6 +648,50 @@ O₃ against NO₂ at r = −0.676.
 ---
 
 ## Model evaluation
+
+### `conditional_eval`
+
+Why a model fails, not just where. `conditional_quantile` shows that the
+error grows at the top of the range; this splits the same bins by other
+variables, so if the bias tracks wind speed or only appears at low
+temperature the failure has a name.
+
+The top panel is the error statistic; the rest are conditions plotted as
+anomalies from their own overall mean, so variables on different scales
+share an axis and zero is always the reference. This is association, not
+attribution — a variable that tracks the bias may be the cause or may
+merely accompany it.
+
+<p align="center"><img src="https://raw.githubusercontent.com/chris-r-uol/PythonAQ/main/docs/images/conditional_eval.png" alt="Conditioned model evaluation" width="640"></p>
+
+```python
+from PythonAQ import conditional_eval
+
+fig, summary = conditional_eval(df, obs='observed', mod='model',
+                                variables=['ws', 'air_temp'])
+```
+
+### `run_regression`
+
+A regression coefficient as a series rather than a single number. A
+relationship estimated once over four years is an average over whatever
+changed during them; this fits the same model in a sliding window so you
+can see whether it held still.
+
+Successive windows overlap, so neighbouring points are not independent
+and the series looks smoother than the evidence warrants — read the level
+and the large moves, not the wiggles. Correlated predictors also split
+their shared effect arbitrarily; two coefficients mirroring each other is
+the usual sign of it.
+
+<p align="center"><img src="https://raw.githubusercontent.com/chris-r-uol/PythonAQ/main/docs/images/run_regression.png" alt="Rolling regression" width="640"></p>
+
+```python
+from PythonAQ import run_regression
+
+fig, summary = run_regression(df, y='NO2', x=['NOx', 'ws'],
+                              window=168, step=24)
+```
 
 ### `mod_stats`
 
@@ -870,6 +975,68 @@ and clips the result to 0–100.
 
 ---
 
+### The smoothers
+
+Four ways to separate signal from noise, each with a different notion of what
+counts as signal. All follow `rolling_mean`'s convention: give a DataFrame and
+a column, get the DataFrame back with a new column appended.
+
+<p align="center"><img src="https://raw.githubusercontent.com/chris-r-uol/PythonAQ/main/docs/images/smoothers.png" alt="The four smoothers compared" width="640"></p>
+
+```python
+from PythonAQ import (gaussian_smooth, kz_filter,
+                      rolling_quantile, whittaker_smooth)
+
+df = rolling_quantile(df, 'NO2', width=24, quantile=0.5)
+df = kz_filter(df, 'NO2', width=24, iterations=3)
+df = whittaker_smooth(df, 'NO2', lam=1e6)
+df = gaussian_smooth(df, 'NO2', sigma=12)
+```
+
+- **`rolling_quantile`** tracks a percentile rather than a mean, so one
+  extreme hour does not move it. A rolling median separates a shift in the
+  bulk of the distribution from a handful of episodes.
+- **`kz_filter`** is the iterated moving average used in trend work. Repeating
+  a short window sharpens the frequency cutoff far more than lengthening a
+  single one: KZ(15, 5) suppresses high frequencies much more cleanly than one
+  75-point mean while following a slow trend just as closely.
+- **`whittaker_smooth`** balances fidelity against roughness in one global fit,
+  so it neither shortens the series at the ends nor leaves holes in it.
+- **`gaussian_smooth`** is the plain weighted-kernel smoother.
+
+`kz_filter` and `whittaker_smooth` bridge gaps; `rolling_quantile` and
+`gaussian_smooth` leave them. The difference is deliberate — across a long
+outage a bridged value is an extrapolation of the smoother's assumptions
+rather than evidence, and it should be obvious which you are looking at.
+
+`gaussian_smooth` renormalises its kernel weights around missing values rather
+than treating them as zero, which would drag the smoothed series towards zero
+beside every gap and read as a real dip.
+
+### `solar_elevation` and `is_daylight`
+
+Where the sun actually is, which is what `cut_data(type='daylight')` uses.
+
+```python
+from PythonAQ import cut_data, is_daylight, solar_elevation
+
+solar_elevation(df['date_time'], latitude=53.80, longitude=-1.55)
+cut_data(df, type='daylight', latitude=53.80, longitude=-1.55)
+```
+
+A fixed clock window is not a usable substitute outside the tropics. At Leeds
+the sun rises before 04:00 in June and after 08:00 in December, so a
+07:00–19:00 rule mislabels five hours a day in midsummer and errs the other
+way in midwinter — about one hour in eight over a year, in opposite
+directions, so it does not average out of a seasonal comparison.
+
+Timestamps are assumed to be UTC unless timezone-aware, which is what the UK
+networks and NOAA ISD both publish. Feeding local clock time in shifts the
+result by the UTC offset — a whole hour under British Summer Time.
+
+Without coordinates `cut_data(type='daylight')` still falls back to the fixed
+window, but warns rather than implying a precision it does not have.
+
 ### `quick_text`
 
 Formats pollutant names and units for display. Applied automatically to the
@@ -890,6 +1057,31 @@ substring match would mangle ordinary prose — `'nothing'`, `'Nottingham'` and
 
 - `auto` (bool): set False to disable, without branching at the call site.
 - `plain` (bool): drop the markup, for contexts that do not render HTML.
+
+---
+
+## Upgrading to 1.0
+
+One behaviour changed, and it changes numbers rather than only interfaces.
+
+**`time_average` infers the sampling interval differently.** Data capture is
+measured against a regular time base. When `interval` is not given, that base
+used to be the *most common* gap between observations, which overstated
+capture whenever rows were absent rather than present-and-NaN: a series full
+of holes has a modal gap wider than its true interval, so periods that were
+half empty could pass a 75% threshold. It is now the greatest common divisor
+of the gaps, which recovers the true interval in that case.
+
+If you use `data_thresh` on a series with missing rows, more periods will now
+correctly fall below the threshold and become NaN. Passing `interval='hour'`
+explicitly gives the same answer on both versions, and is still worth doing:
+a series decimated perfectly regularly carries no evidence of the rows that
+are gone and cannot be inferred either way.
+
+**`cut_data(type='daylight')` now uses the real sunrise and sunset** when
+given `latitude` and `longitude`, which it previously accepted and ignored.
+Without them it still falls back to a fixed 07:00-19:00 window, but warns.
+At UK latitudes the two disagree for about one hour in eight over a year.
 
 ---
 
@@ -917,13 +1109,20 @@ the `modStats` metrics, the formulas follow the openair R source exactly.
 | `conditionalQuantile` | `conditional_quantile` | | `datePad` | `date_pad` |
 | `TaylorDiagram` | `taylor_diagram` | | `splitByDate` | `split_by_date` |
 | `timeProp` | `time_prop` | | `selectRunning` | `select_running` |
-| | | | `binData` | `bin_data` |
+| `polarDiff` | `polar_diff` | | `binData` | `bin_data` |
+| `distPlot` | `dist_plot` | | `rollingQuantile` | `rolling_quantile` |
+| `linearRelation` | `linear_relation` | | `kzFilter` | `kz_filter` |
+| `runRegression` | `run_regression` | | `WhittakerSmooth` | `whittaker_smooth` |
+| `conditionalEval` | `conditional_eval` | | `GaussianSmooth` | `gaussian_smooth` |
 
-**Not yet ported:** `polarDiff`, `conditionalEval`, `distPlot`,
-`linearRelation`, `runRegression`, the trajectory functions (`trajPlot`,
-`trajLevel`, `trajCluster`), the remaining smoothers (`GaussianSmooth`,
-`WhittakerSmooth`, `kzFilter`, `rollingQuantile`), and the `openairmaps`
-interactive maps, which are a separate package.
+**Not yet ported:** the trajectory functions (`trajPlot`, `trajLevel`,
+`trajCluster`), which need HYSPLIT back-trajectory data rather than only a
+different plot, and the `openairmaps` interactive maps, which are a separate
+package in R too.
+
+**Beyond openair:** `solar_elevation` and `is_daylight` expose the solar
+position calculation that `cut_data(type='daylight')` uses, since knowing when
+the sun was up is useful well beyond that one split.
 
 **One deliberate difference:**
 

@@ -107,8 +107,8 @@ def conditional_eval(df, obs='obs', mod='mod', variables=None, bins=10,
     panels = 1 + len(variables)
     fig = make_subplots(
         rows=panels, cols=1, shared_xaxes=True, vertical_spacing=0.07,
-        subplot_titles=[f'{statistic} of {quick_text(mod)}']
-                       + [quick_text(v) for v in variables],
+        subplot_titles=([f'{statistic} of {quick_text(mod)}']
+                        + [quick_text(v) for v in variables]),
     )
     fig.add_trace(go.Scatter(
         x=summary['bin_centre'], y=summary[statistic], mode='lines+markers',

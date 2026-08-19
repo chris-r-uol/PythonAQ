@@ -82,7 +82,6 @@ def run_regression(df, y='NO2', x=('NOx', 'ws', 'temp'), window=168, step=24,
     if min_points is None:
         min_points = max(int(0.75 * window), len(predictors) + 2)
 
-    names = (['intercept'] if intercept else []) + predictors
     rows = []
     for start in range(0, len(data) - window + 1, step):
         block = data.iloc[start:start + window]

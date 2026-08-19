@@ -77,9 +77,9 @@ class TestPolarDiff:
         """A sector sampled in one period and not the other is not a change of
         unknown size; it is unmeasured, and must not be drawn."""
         n = 3000
-        common = dict(NO2=None)
         wd_full = rng.uniform(0, 360, n)
         wd_half = rng.uniform(0, 180, n)   # nothing from the west at all
+
         def frame(wd):
             ws = rng.gamma(2.0, 2.0, len(wd))
             return pd.DataFrame({'ws': ws, 'wd': wd,
@@ -140,3 +140,15 @@ class TestPolarDiff:
         assert 'NO' in fig.layout.title.text
         custom = polar_diff(before, after, title='Lockdown', resolution=RESOLUTION)
         assert custom.layout.title.text == 'Lockdown'
+
+    def test_auto_limit_ignores_the_extreme_edge_cells(self, periods):
+        """The largest differences sit at the rim where each fit is least
+        supported. Scaling to the maximum lets a handful of those cells wash
+        out the interior, so the default is the 99th percentile."""
+        before, after = periods
+        trace = polar_diff(before, after, resolution=RESOLUTION).data[0]
+        z = np.array(trace.z, dtype=float)
+        assert trace.zmax < np.nanmax(np.abs(z))
+        # Only a sliver may be clipped, or the scale is hiding real structure.
+        drawn = np.isfinite(z).sum()
+        assert 0 < (np.abs(z) > trace.zmax).sum() < 0.02 * drawn

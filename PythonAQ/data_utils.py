@@ -79,24 +79,55 @@ def _parse_avg_time(avg_time):
     return text  # already a pandas alias
 
 
-def _infer_base_freq(index):
+def _infer_base_freq(index, warn=False):
     """Infer the native sampling interval of a DatetimeIndex.
 
-    Falls back to the modal gap between observations, which is robust to the
-    gaps that real monitoring data always contains.
+    Uses the greatest common divisor of the gaps between observations rather
+    than the most common gap. The two agree on a complete series and differ
+    where rows are absent rather than present-and-NaN: an outage leaves gaps
+    of three or seven hours in an hourly series, whose modal gap may still be
+    an hour but whose divisor is unambiguously one.
+
+    The divisor cannot recover an interval that never appears. A series
+    decimated perfectly regularly - every second row absent, and no gap
+    anywhere shorter than two hours - is indistinguishable from a genuine
+    two-hourly series, because the timestamps carry no evidence of the rows
+    that are gone. Only `interval` settles that case.
+
+    Returns None when there is nothing to infer from.
     """
     if len(index) < 2:
         return None
-    inferred = pd.infer_freq(index)
-    if inferred is not None:
-        return pd.tseries.frequencies.to_offset(inferred)
     gaps = pd.Series(index).diff().dropna()
+    gaps = gaps[gaps > pd.Timedelta(0)]
     if gaps.empty:
         return None
-    modal = gaps.mode()
-    if modal.empty:
+
+    seconds = gaps.dt.total_seconds().round().astype('int64').to_numpy()
+    seconds = seconds[seconds > 0]
+    if not len(seconds):
         return None
-    return pd.tseries.frequencies.to_offset(modal.iloc[0])
+    divisor = int(np.gcd.reduce(seconds))
+    if divisor <= 0:
+        return None
+
+    if warn:
+        # A divisor far below the typical gap means the timestamps do not sit
+        # on a regular grid at all - a stray offset reading, or seconds-level
+        # jitter - rather than that rows are missing from one. Capture against
+        # that base would be understated by the same large factor, blanking
+        # periods that are actually complete.
+        modal = int(pd.Series(seconds).mode().iloc[0])
+        if modal >= 20 * divisor:
+            warnings.warn(
+                f'The timestamps imply a sampling interval of {divisor}s, but '
+                f'a typical gap is {modal}s. This usually means the timestamps '
+                'are irregular rather than that rows are missing, and data '
+                'capture measured against the shorter base will be understated. '
+                "Pass interval= to state the intended base explicitly.",
+                UserWarning, stacklevel=3,
+            )
+    return pd.tseries.frequencies.to_offset(pd.Timedelta(seconds=divisor))
 
 
 def time_average(df, avg_time='day', data_thresh=0, statistic='mean',
@@ -121,18 +152,25 @@ def time_average(df, avg_time='day', data_thresh=0, statistic='mean',
     - vector_ws (bool): If True, also report the vector (rather than scalar)
       mean wind speed.
     - interval (str or None): The series' true sampling interval, e.g. 'hour'.
-      Only used when `data_thresh` is set. Inferred from the data when None.
+      Only used when `data_thresh` is set. When None it is inferred as the
+      greatest common divisor of the gaps between observations.
 
     Returns:
     - pd.DataFrame: Averaged data with `date_col` as a column.
 
     Notes:
-    - Give `interval` when rows may be absent rather than present-and-NaN.
-      Capture is measured against a regular time base, and inferring that base
-      from the data uses the most common gap between observations - which is
-      wrong precisely when data is missing. An hourly series with every other
-      row absent looks like a complete two-hourly series, and reports 100%
-      capture on 50% of the data. Stating the interval removes the guess.
+    - Capture is measured against a regular time base. When `interval` is not
+      given, that base is inferred as the greatest common divisor of the gaps
+      between observations. Before version 1.0 it was the *most common* gap,
+      which overstated capture whenever rows were absent rather than
+      present-and-NaN, because a series full of holes has a modal gap wider
+      than its true interval. Results therefore change - in the direction of
+      being right - for anyone using `data_thresh` on such a series.
+    - The inference still cannot see an interval that never occurs. A series
+      decimated perfectly regularly, with every second row absent and no gap
+      anywhere shorter than two hours, is indistinguishable from a genuine
+      two-hourly series and will still report full capture. Pass `interval`
+      whenever the sampling interval is known; it removes the guess entirely.
       `date_pad` does the same job as a separate step.
     """
     if date_col not in df.columns:
@@ -165,7 +203,8 @@ def time_average(df, avg_time='day', data_thresh=0, statistic='mean',
     # exactly as openair's datePad does. `interval` states that base explicitly;
     # inferring it is a guess that fails in the case it most needs to handle.
     base = (pd.tseries.frequencies.to_offset(_parse_avg_time(interval))
-            if interval is not None else _infer_base_freq(data.index))
+            if interval is not None
+            else _infer_base_freq(data.index, warn=data_thresh > 0))
     if base is not None and data_thresh > 0:
         full_index = pd.date_range(data.index.min(), data.index.max(), freq=base)
         numeric = numeric.reindex(numeric.index.union(full_index))

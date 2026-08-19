@@ -37,6 +37,9 @@ from .conditional_quantile import conditional_quantile
 from .corr_plot import corr_plot
 from .map_sites import map_sites
 from .percentile_rose import percentile_rose
+from .conditional_eval import conditional_eval
+from .dist_plot import dist_plot
+from .linear_relation import linear_relation
 from .polar_annulus import polar_annulus
 from .polar_diff import polar_diff
 from .polar_cluster import polar_cluster
@@ -70,6 +73,9 @@ from .data_utils import (
     time_average,
 )
 from .deweather_deseason import deseason_data
+from .run_regression import run_regression
+from .smoothers import (gaussian_smooth, kz_filter, rolling_quantile,
+                        whittaker_smooth)
 from .solar import is_daylight, solar_elevation
 from .text import quick_text
 from .utilities import e_sat, get_period, rh
@@ -84,7 +90,9 @@ __all__ = [
     # Visualisation
     "calendar",
     "conditional_quantile",
+    "conditional_eval",
     "corr_plot",
+    "dist_plot",
     "map_sites",
     "percentile_rose",
     "polar_annulus",
@@ -114,14 +122,20 @@ __all__ = [
     "deseason_data",
     "e_sat",
     "get_period",
+    "gaussian_smooth",
     "is_daylight",
+    "kz_filter",
+    "linear_relation",
     "quick_text",
     "rh",
     "rolling_mean",
+    "rolling_quantile",
+    "run_regression",
     "select_by_date",
     "select_running",
     "solar_elevation",
     "split_by_date",
+    "whittaker_smooth",
     "time_average",
     "__version__",
 ]

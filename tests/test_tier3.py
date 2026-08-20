@@ -54,10 +54,16 @@ class TestDistPlot:
         assert np.sum(trace.y) == pytest.approx(1.0)
 
     def test_density_integrates_to_about_one(self, linked):
-        """A density that does not integrate to 1 is not a density."""
+        """A density that does not integrate to 1 is not a density.
+
+        The trapezoidal sum is written out rather than called: the function is
+        np.trapz on numpy 1 and np.trapezoid on numpy 2, and the calendar
+        extra pins numpy below 2.
+        """
         trace = dist_plot(linked, 'NOx').data[0]
         x, y = np.array(trace.x), np.array(trace.y)
-        assert np.trapezoid(y, x) == pytest.approx(1.0, abs=0.02)
+        area = float(np.sum((y[:-1] + y[1:]) / 2.0 * np.diff(x)))
+        assert area == pytest.approx(1.0, abs=0.02)
 
     def test_log_x_drops_non_positive_values(self, rng):
         """Zero has no logarithm. Dropping is honest; substituting would

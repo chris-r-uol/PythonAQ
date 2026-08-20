@@ -27,6 +27,7 @@ actually renders.
 - [Conditioning with `type`](#conditioning-with-type)
 - [Getting data](#getting-data)
 - [Directional analysis](#directional-analysis) — how concentrations relate to wind
+- [Maps](#maps) — those plots at their sites' positions
 - [Time series and trends](#time-series-and-trends)
 - [Distributions and relationships](#distributions-and-relationships)
 - [Model evaluation](#model-evaluation)
@@ -416,6 +417,93 @@ from PythonAQ import polar_cluster
 
 polar_cluster(df, feature_cols=['NO2', 'PM10', 'O3'], n_clusters=6).show()
 ```
+
+---
+
+## Maps
+
+A polar plot says which direction a source lies in. A map says what is in that
+direction. Reading one against the other by eye is exactly the step where
+mistakes happen — especially across several sites, where the interesting
+result is usually that two sites disagree about where the pollution comes
+from.
+
+These place the directional plots at their sites' positions. They are ordinary
+plotly figures like everything else in the package, so there is no extra
+dependency to install.
+
+### `polar_map`
+
+<p align="center"><img src="https://raw.githubusercontent.com/chris-r-uol/PythonAQ/main/docs/images/polar_map.png" alt="Polar plots on a map of West Yorkshire" width="700"></p>
+
+```python
+from PythonAQ import import_aq_meta, polar_map
+
+meta = import_aq_meta('aurn')[['site_id', 'latitude', 'longitude']]
+df = df.merge(meta.drop_duplicates('site_id'), on='site_id')
+
+polar_map(df, 'NO2').show()
+```
+
+Bradford Mayo Avenue is a roadside site and looks like one: high everywhere,
+peaking at low wind speeds when nothing disperses. Leeds Centre and Dewsbury
+are milder, and their structure sits in different sectors.
+
+### `wind_rose_map`, `pollutant_rose_map`, `percentile_rose_map`, `freq_map`, `annulus_map`
+
+<p align="center"><img src="https://raw.githubusercontent.com/chris-r-uol/PythonAQ/main/docs/images/wind_rose_map.png" alt="Wind roses on a map" width="700"></p>
+
+```python
+from PythonAQ import annulus_map, freq_map, wind_rose_map
+
+wind_rose_map(df).show()
+freq_map(df).show()                       # how often the wind blows each way
+annulus_map(df, 'NO2', period='hour').show()
+```
+
+The same five directional plots the package already draws, one per site. All
+three sites here share the West Yorkshire prevailing westerly, which is the
+point of drawing them together: a site that *disagreed* would be worth a look.
+
+### How they are drawn, and what that means
+
+Each plot is drawn in **geographic coordinates** rather than pasted on as a
+fixed-size image, so the markers keep their bearings against the streets
+underneath at every zoom level.
+
+The radial axis is **not a distance**. A marker's size on the ground is a
+drawing choice set by `radius_km`, so a feature reaching the rim means the
+wind was fast, not that the source is that far away.
+
+By default `radius_km` is 35% of the distance between the two closest sites,
+so markers cannot overlap — two overlapping polar plots cannot be read at all.
+The consequence is that one close pair shrinks *every* marker on the map,
+including markers nowhere near it. That is inherent to drawing on the ground
+rather than pinning fixed-size icons, so the default stands and the override
+is pointed at when it starts to matter:
+
+```python
+polar_map(df, 'NO2')                   # markers sized not to overlap
+polar_map(df, 'NO2', radius_km=3)      # larger, and they may overlap
+```
+
+If the automatic radius leaves markers under a fifth of the width of the
+mapped area, a warning names `radius_km` rather than leaving you to work it
+out from the figure. Passing it explicitly silences the warning, since you
+have already made the choice.
+
+The colour scale and the radial extent are **shared across sites** by default.
+Comparing sites is the only reason to draw them together, and a per-site scale
+silently defeats it. Pass `limits='free'` where one site would otherwise
+flatten the rest to a single colour.
+
+Basemaps are `carto-positron` (default) and `carto-darkmatter`, the muted
+OpenStreetMap styles. A full-colour basemap competes with the data on top of
+it.
+
+A site with too little data to fit is **skipped rather than fatal**, so one bad
+site cannot hide every good one. A site with no coordinates is dropped rather
+than drawn at latitude zero.
 
 ---
 
@@ -1115,10 +1203,27 @@ the `modStats` metrics, the formulas follow the openair R source exactly.
 | `runRegression` | `run_regression` | | `WhittakerSmooth` | `whittaker_smooth` |
 | `conditionalEval` | `conditional_eval` | | `GaussianSmooth` | `gaussian_smooth` |
 
+From `openairmaps`:
+
+| openairmaps | PythonAQ | | openairmaps | PythonAQ |
+|---|---|---|---|---|
+| `polarMap` | `polar_map` | | `percentileMap` | `percentile_rose_map` |
+| `windroseMap` | `wind_rose_map` | | `freqMap` | `freq_map` |
+| `pollroseMap` | `pollutant_rose_map` | | `annulusMap` | `annulus_map` |
+| `networkMap` | `map_sites` | | | |
+
 **Not yet ported:** the trajectory functions (`trajPlot`, `trajLevel`,
-`trajCluster`), which need HYSPLIT back-trajectory data rather than only a
-different plot, and the `openairmaps` interactive maps, which are a separate
-package in R too.
+`trajCluster`) and their `openairmaps` counterparts (`trajMap`,
+`trajLevelMap`), which need HYSPLIT back-trajectory data rather than only a
+different plot.
+
+**Drawn differently from openairmaps:** the R package renders each plot to an
+image and pins it to the map as a fixed-size icon, so markers keep their
+screen size as you zoom. These draw in geographic coordinates instead, so a
+marker keeps its bearings against the streets underneath and grows as you zoom
+in. There is no `addPolarMarkers` equivalent, because there is no separate
+leaflet map to add markers to — the result is a plotly figure you can add
+traces to directly.
 
 **Beyond openair:** `solar_elevation` and `is_daylight` expose the solar
 position calculation that `cut_data(type='daylight')` uses, since knowing when

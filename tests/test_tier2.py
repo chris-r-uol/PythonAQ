@@ -5,6 +5,8 @@ Model evaluation: conditional_quantile, taylor_diagram.
 Time series: time_prop.
 """
 
+import warnings
+
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -94,21 +96,69 @@ class TestDatePad:
 
 
 class TestTimeAverageInterval:
-    """Capture is measured against a regular time base. Inferring that base
-    from the data fails in the case it most needs to handle: rows absent
-    rather than present-and-NaN."""
+    """Capture is measured against a regular time base.
+
+    Since 1.0 that base is inferred as the greatest common divisor of the
+    gaps, which handles the ordinary case of an outage. One case remains
+    genuinely undecidable from timestamps alone and is pinned here so the
+    limit stays documented rather than discovered.
+    """
 
     @pytest.fixture
     def half_hourly_gaps(self):
         full = pd.date_range('2022-01-01', '2022-01-02 23:00', freq='h')
         return pd.DataFrame({'date_time': full[::2], 'x': 1.0}), full
 
-    def test_inferred_interval_overstates_capture(self, half_hourly_gaps):
-        """Documents the trap: 50% capture is reported as complete, because
-        the modal gap is two hours so the series looks two-hourly."""
+    def test_regular_decimation_is_undecidable(self, half_hourly_gaps):
+        """A series with every second row absent and no gap shorter than two
+        hours carries no evidence of the missing rows, so it is
+        indistinguishable from a genuine two-hourly series and still reports
+        full capture. No inference can fix this; only stating the interval.
+        """
         df, _ = half_hourly_gaps
         result = time_average(df, 'day', data_thresh=75)
         assert result['x'].notna().all()
+
+    def test_irregular_gaps_are_inferred_correctly(self, rng):
+        """The ordinary case, and the one the 1.0 change fixes: an hourly
+        series with outages of assorted lengths. Its modal gap can still be an
+        hour, but a run of absent rows used to widen the inferred base and
+        overstate capture. The divisor is unambiguously an hour.
+        """
+        full = pd.date_range('2022-01-01', '2022-01-31 23:00', freq='h')
+        keep = np.ones(len(full), bool)
+        for start in rng.choice(len(full), 12, replace=False):
+            keep[start:start + rng.integers(3, 20)] = False
+        df = pd.DataFrame({'date_time': full[keep], 'x': 1.0})
+
+        stated = time_average(df, 'day', data_thresh=90, interval='hour')
+        inferred = time_average(df, 'day', data_thresh=90)
+        pd.testing.assert_frame_equal(stated, inferred)
+        # Some days must actually fail, or the test proves nothing.
+        assert inferred['x'].isna().any()
+
+    def test_a_complete_series_infers_its_own_interval(self):
+        full = pd.date_range('2022-01-01', periods=240, freq='h')
+        df = pd.DataFrame({'date_time': full, 'x': 1.0})
+        assert time_average(df, 'day', data_thresh=90)['x'].notna().all()
+
+    def test_irregular_timestamps_warn(self):
+        """A stray offset reading makes the divisor far smaller than any real
+        interval, which would understate capture everywhere. Say so."""
+        stamps = list(pd.date_range('2022-01-01', periods=200, freq='h'))
+        stamps.append(stamps[50] + pd.Timedelta(seconds=137))
+        df = pd.DataFrame({'date_time': sorted(stamps), 'x': 1.0})
+        with pytest.warns(UserWarning, match='timestamps are irregular'):
+            time_average(df, 'day', data_thresh=75)
+
+    def test_no_warning_without_a_threshold(self):
+        """The base is only used when capture is being measured."""
+        stamps = list(pd.date_range('2022-01-01', periods=200, freq='h'))
+        stamps.append(stamps[50] + pd.Timedelta(seconds=137))
+        df = pd.DataFrame({'date_time': sorted(stamps), 'x': 1.0})
+        with warnings.catch_warnings():
+            warnings.simplefilter('error')
+            time_average(df, 'day')
 
     def test_explicit_interval_measures_capture_correctly(self, half_hourly_gaps):
         df, _ = half_hourly_gaps

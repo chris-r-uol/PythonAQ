@@ -36,28 +36,14 @@ np.seterr(over='ignore', divide='ignore', invalid='ignore')
 
 import PythonAQ  # noqa: E402
 from PythonAQ import (  # noqa: E402
-    aq_stats,
-    corr_plot,
-    download_aurn_data,
-    conditional_quantile,
-    import_aq_meta,
-    map_sites,
-    percentile_rose,
-    polar_annulus,
-    polar_cluster,
-    polar_frequency_plot,
-    polar_plot,
-    pollutant_rose,
-    scatter_plot,
-    smooth_trend_plot,
-    summary_plot,
-    taylor_diagram,
-    theil_sen_plot,
-    time_plot,
-    time_prop,
-    time_variation,
-    trend_level,
-    wind_rose,
+    aq_stats, conditional_eval, conditional_quantile, corr_plot,
+    dist_plot, download_aurn_data, gaussian_smooth, import_aq_meta,
+    kz_filter, linear_relation, map_sites, percentile_rose,
+    polar_annulus, polar_cluster, polar_diff, polar_frequency_plot,
+    polar_plot, pollutant_rose, rolling_quantile, run_regression,
+    scatter_plot, smooth_trend_plot, summary_plot, taylor_diagram,
+    theil_sen_plot, time_plot, time_prop, time_variation, trend_level,
+    whittaker_smooth, wind_rose,
 )
 
 SITE, SOURCE = 'LEED', 'aurn'
@@ -239,6 +225,40 @@ def main() -> int:
     save(polar_annulus(aq, 'NO2', period='hour')[0],
          'polar_annulus', width=760, height=740)
 
+    early = aq[aq['date_time'] < '2024-01-01']
+    late = aq[aq['date_time'] >= '2024-01-01']
+    save(polar_diff(early, late, conc_col='NO2', min_count=10, resolution=400,
+                    title='NO2 change, 2024-25 against 2022-23'),
+         'polar_diff', width=760, height=700)
+
+    save(dist_plot(aq, [c for c in ('NO2', 'PM2.5', 'O3') if c in aq.columns],
+                   title='Distribution of the measured pollutants'),
+         'dist_plot', width=900, height=520)
+
+    x, y = ('NOXasNO2', 'NO2') if 'NOXasNO2' in aq.columns else ('NO', 'NO2')
+    save(linear_relation(aq, x=x, y=y, period='month',
+                         title=f'{y} against {x}, monthly slope')[0],
+         'linear_relation', width=940, height=500)
+
+    predictors = [c for c in (x, 'ws', 'air_temp') if c in aq.columns][:3]
+    save(run_regression(aq, y=y, x=predictors, window=336, step=72,
+                        title=f'Rolling regression of {y}, two-week window')[0],
+         'run_regression', width=940, height=600)
+
+    smoothed = rolling_quantile(aq[['date_time', 'NO2']], 'NO2', width=24,
+                                quantile=0.5, new_name='rolling median (24 h)')
+    smoothed = kz_filter(smoothed, 'NO2', width=24, iterations=3,
+                         new_name='KZ(24, 3)')
+    smoothed = whittaker_smooth(smoothed, 'NO2', lam=1e6, new_name='Whittaker')
+    smoothed = gaussian_smooth(smoothed, 'NO2', sigma=12, new_name='Gaussian')
+    window = smoothed[(smoothed['date_time'] >= '2023-01-01')
+                      & (smoothed['date_time'] < '2023-03-01')]
+    save(time_plot(window, columns_to_plot=['NO2', 'rolling median (24 h)',
+                                            'KZ(24, 3)', 'Whittaker',
+                                            'Gaussian'],
+                   title='The four smoothers on two months of NO2'),
+         'smoothers', width=980, height=520)
+
     save(polar_frequency_plot(aq, separate_by_year=False,
                               title='Wind speed and direction frequency'),
          'polar_frequency', width=760, height=700)
@@ -301,6 +321,13 @@ def main() -> int:
     evaluation['persistence'] = evaluation['NO2'].shift(24)
     evaluation['damped'] = evaluation['NO2'] * 0.6 + 8
     evaluation = evaluation.dropna()
+
+    met = [c for c in ('ws', 'air_temp') if c in aq.columns]
+    save(conditional_eval(evaluation.merge(aq[['date_time', *met]],
+                                           on='date_time', how='left'),
+                          obs='NO2', mod='damped', variables=met,
+                          title='Where the damped model goes wrong, and with what')[0],
+         'conditional_eval', width=940, height=760)
 
     save(conditional_quantile(evaluation, obs='NO2', mod='damped',
                               title='Conditional quantiles: a damped model')[0],

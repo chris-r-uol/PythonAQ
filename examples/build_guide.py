@@ -34,14 +34,16 @@ np.seterr(over='ignore', divide='ignore', invalid='ignore')
 
 import PythonAQ  # noqa: E402
 from PythonAQ import (  # noqa: E402
-    aq_stats, bin_data, calc_percentile, conditional_quantile, corr_plot,
-    cut_data, date_pad, deseason_data, download_aurn_data, e_sat, get_period,
-    import_aq_meta, map_sites, mod_stats, percentile_rose, polar_annulus,
-    polar_cluster, polar_frequency_plot, polar_plot, pollutant_rose, quick_text,
-    rh, rolling_mean, scatter_plot, select_by_date, select_running,
-    smooth_trend_plot, split_by_date, summary_plot, taylor_diagram,
+    aq_stats, bin_data, calc_percentile, conditional_eval, conditional_quantile,
+    corr_plot, cut_data, date_pad, deseason_data, dist_plot, download_aurn_data,
+    e_sat, gaussian_smooth, get_period, import_aq_meta, is_daylight, kz_filter,
+    linear_relation, map_sites, mod_stats, percentile_rose, polar_annulus,
+    polar_cluster, polar_diff, polar_frequency_plot, polar_plot, pollutant_rose,
+    quick_text, rh, rolling_mean, rolling_quantile, run_regression,
+    scatter_plot, select_by_date, select_running, smooth_trend_plot,
+    solar_elevation, split_by_date, summary_plot, taylor_diagram,
     theil_sen_plot, time_average, time_plot, time_prop, time_variation,
-    trend_level, wind_rose,
+    trend_level, whittaker_smooth, wind_rose,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -162,6 +164,51 @@ def text(lines):
     return {'kind': 'text', 'text': '\n'.join(lines)}
 
 
+def _pair(aq):
+    """The best available (predictor, response) pollutant pair in the data."""
+    for x, y in (('NOx', 'NO2'), ('NOXasNO2', 'NO2'), ('NO', 'NO2'),
+                 ('NO2', 'PM2.5'), ('NO2', 'PM10')):
+        if x in aq.columns and y in aq.columns:
+            return x, y
+    numeric = [c for c in aq.select_dtypes('number').columns][:2]
+    return numeric[0], numeric[1]
+
+
+def _predictors(aq):
+    """Predictors for the rolling regression, whichever of them exist."""
+    wanted = [_pair(aq)[0], 'ws', 'air_temp']
+    return [c for c in wanted if c in aq.columns][:3]
+
+
+def _evaluation_with_met(aq, evaluation):
+    """The stand-in model frame, with the meteorology joined back on."""
+    met = [c for c in ('ws', 'air_temp') if c in aq.columns]
+    return evaluation.merge(aq[['date_time', *met]], on='date_time', how='left')
+
+
+def _solar_lines(aq):
+    """Console output for the solar helpers, using the real site position."""
+    lat, lon = 53.8008, -1.5491          # Leeds Centre
+    stamps = pd.to_datetime(pd.Series([
+        '2022-06-21 04:00', '2022-06-21 12:00', '2022-12-21 04:00',
+        '2022-12-21 12:00',
+    ]))
+    elevation = solar_elevation(stamps, lat, lon)
+    up = is_daylight(stamps, lat, lon)
+    lines = [f'Leeds Centre, {lat:.4f} N {abs(lon):.4f} W', '']
+    for stamp, e, lit in zip(stamps, elevation, up):
+        lines.append(f'{stamp:%Y-%m-%d %H:%M} UTC   elevation {e:+6.1f} deg   '
+                     f'{"daylight" if lit else "night"}')
+
+    year = pd.date_range('2022-01-01', '2022-12-31 23:00', freq='h')
+    solar = is_daylight(year, lat, lon)
+    fixed = (year.hour >= 7) & (year.hour < 19)
+    lines += ['', f'hours a fixed 07:00-19:00 window mislabels: '
+                  f'{int((solar != fixed).sum()):,} of {len(year):,} '
+                  f'({(solar != fixed).mean():.1%})']
+    return lines
+
+
 def load():
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     meta_cache = CACHE_DIR / 'aurn_meta.parquet'
@@ -253,6 +300,22 @@ def build_entries(metadata, aq):
                'nearby ground-level sources accumulating under calm conditions. '
                'Use <code>render=\'contour\'</code> for bands, or '
                '<code>\'tile\'</code> for the older one-polygon-per-bin look.')
+
+    early = aq[aq['date_time'] < '2024-01-01']
+    late = aq[aq['date_time'] >= '2024-01-01']
+    entry('polar_diff', 'Directional analysis',
+          'What changed between two periods, by wind sector.',
+          """
+          from PythonAQ import polar_diff
+
+          polar_diff(before, after, conc_col='NO2')
+          """,
+          figure(polar_diff(early, late, conc_col='NO2', min_count=10,
+                            resolution=GRID, title=None), height=470),
+          note='Leeds Centre, 2024-25 against 2022-23. The scale is forced to '
+               'be symmetric about zero, so white always means no change. '
+               'Blank sectors are those one period cannot support - unmeasured '
+               'rather than unchanged.')
 
     entry('polar_annulus', 'Directional analysis',
           'Wind direction around the ring, a temporal variable through it.',
@@ -437,6 +500,34 @@ def build_entries(metadata, aq):
     for trace in scatter_fig.data:
         if trace.type in ('scattergl', 'scatter') and trace.name == 'data':
             trace.x, trace.y = trace.x[::6], trace.y[::6]
+    entry('dist_plot', 'Distributions and relationships',
+          'The shape of a distribution, not just its mean.',
+          """
+          from PythonAQ import dist_plot
+
+          dist_plot(df, ['NO2', 'PM2.5'], kind='density')
+          """,
+          figure(dist_plot(aq, [c for c in ('NO2', 'PM2.5', 'O3')
+                                if c in aq.columns],
+                           kind='density', title=None), height=420),
+          note='Concentrations are bounded at zero and right-skewed, so a mean '
+               'sits well above the mode. <code>kind=\'cdf\'</code> for '
+               'percentiles, <code>log_x=True</code> to see bulk and tail at '
+               'once.')
+
+    entry('linear_relation', 'Distributions and relationships',
+          'How the relationship between two pollutants moves over time.',
+          """
+          from PythonAQ import linear_relation
+
+          fig, summary = linear_relation(df, x='NOx', y='NO2', period='month')
+          """,
+          figure(linear_relation(aq, x=_pair(aq)[0], y=_pair(aq)[1],
+                                 period='month', title=None)[0], height=420),
+          note='The slope describes the source rather than the amount, so a '
+               'change in it is a change in what is emitting. The band is the '
+               'standard error of the slope within each month.')
+
     entry('scatter_plot', 'Distributions and relationships',
           'Two variables against each other, with optional fits.',
           """
@@ -500,6 +591,38 @@ def build_entries(metadata, aq):
                'the distance from the star <em>is</em> the centred RMS error. '
                'Closer to the star is better. Bias is reported separately, '
                'since the centred error removes each series\' mean.')
+
+    entry('conditional_eval', 'Model evaluation',
+          'Why a model fails, by breaking the error down by other variables.',
+          """
+          from PythonAQ import conditional_eval
+
+          fig, summary = conditional_eval(df, obs='observed', mod='model',
+                                          variables=['ws', 'temp'])
+          """,
+          figure(conditional_eval(_evaluation_with_met(aq, evaluation),
+                                  obs='NO2', mod='damped',
+                                  variables=[c for c in ('ws', 'air_temp')
+                                             if c in aq.columns],
+                                  title=None)[0], height=560),
+          note='The top panel is the error; the rest are conditions plotted as '
+               'anomalies from their own mean. A panel that trends with the '
+               'error names a suspect. Association, not proof.')
+
+    entry('run_regression', 'Model evaluation',
+          'A regression coefficient as a series rather than a single number.',
+          """
+          from PythonAQ import run_regression
+
+          fig, summary = run_regression(df, y='NO2', x=['NOx', 'ws'],
+                                        window=168, step=24)
+          """,
+          figure(run_regression(aq, y=_pair(aq)[1], x=_predictors(aq),
+                                window=336, step=72, title=None)[0],
+                 height=440),
+          note='One fit per sliding window, so a relationship that held for a '
+               'year and then moved is visible. Neighbouring windows overlap '
+               'and are not independent: read the level, not the wiggles.')
 
     entry('mod_stats', 'Model evaluation',
           'The standard model evaluation statistics.',
@@ -586,6 +709,33 @@ def build_entries(metadata, aq):
                'ozone in most air quality standards.')
 
     seasons = cut_data(aq, type='season')
+    smoothed = rolling_quantile(aq[['date_time', 'NO2']], 'NO2', width=24,
+                                quantile=0.5, new_name='median24')
+    smoothed = kz_filter(smoothed, 'NO2', width=24, iterations=3,
+                         new_name='kz')
+    smoothed = whittaker_smooth(smoothed, 'NO2', lam=1e6, new_name='whittaker')
+    smoothed = gaussian_smooth(smoothed, 'NO2', sigma=12, new_name='gaussian')
+    entry('the smoothers', 'Data utilities',
+          'Four ways to separate signal from noise, each with a different '
+          'notion of signal.',
+          """
+          from PythonAQ import (gaussian_smooth, kz_filter,
+                                rolling_quantile, whittaker_smooth)
+
+          df = rolling_quantile(df, 'NO2', width=24, quantile=0.5)
+          df = kz_filter(df, 'NO2', width=24, iterations=3)
+          df = whittaker_smooth(df, 'NO2', lam=1e6)
+          df = gaussian_smooth(df, 'NO2', sigma=12)
+          """,
+          table(smoothed[['date_time', 'NO2', 'median24', 'kz', 'whittaker',
+                          'gaussian']].dropna().iloc[::720], rows=6),
+          uses=['rolling_quantile', 'kz_filter', 'whittaker_smooth',
+                'gaussian_smooth'],
+          note='<code>kz_filter</code> and <code>whittaker_smooth</code> bridge '
+               'gaps; <code>rolling_quantile</code> and '
+               '<code>gaussian_smooth</code> leave them. A rolling median is '
+               'unmoved by a single extreme hour, where a mean is not.')
+
     entry('cut_data', 'Data utilities',
           'Add a conditioning column for splitting data.',
           """
@@ -698,6 +848,22 @@ def build_entries(metadata, aq):
                 f"rh(20.0, 10.0)   = {float(rh(20.0, 10.0)):.1f} %",
                 f"rh(15.0, 15.0)   = {float(rh(15.0, 15.0)):.1f} %  (saturated)"]),
           uses=['e_sat', 'rh'])
+
+    entry('solar_elevation and is_daylight', 'Helpers',
+          'Where the sun actually is, for splitting day from night.',
+          """
+          from PythonAQ import cut_data, is_daylight, solar_elevation
+
+          solar_elevation(df['date_time'], latitude=53.80, longitude=-1.55)
+          cut_data(df, type='daylight', latitude=53.80, longitude=-1.55)
+          """,
+          text(_solar_lines(aq)),
+          uses=['solar_elevation', 'is_daylight'],
+          note='A fixed clock window mislabels five hours a day at this '
+               'latitude in midsummer, and errs the other way in midwinter, so '
+               'it does not average out of a seasonal comparison. '
+               '<code>cut_data(type=\'daylight\')</code> warns if you omit '
+               'the coordinates.')
 
     entry('quick_text', 'Helpers',
           'Format pollutant names and units for display.',

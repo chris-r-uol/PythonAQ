@@ -81,7 +81,7 @@ def _harmonise_colour_scales(fig):
 
 def facet_by_type(plot_fn, df, type, date_col='date_time', hemisphere='northern',
                   n_levels=4, ncols=3, width=None, height=None,
-                  panel_height=380, **kwargs):
+                  panel_height=380, latitude=None, longitude=None, **kwargs):
     """Draw `plot_fn` once per level of `type` and combine into one figure.
 
     Parameters:
@@ -92,6 +92,8 @@ def facet_by_type(plot_fn, df, type, date_col='date_time', hemisphere='northern'
       'month', 'season', 'weekday', 'weekend', 'hour', 'daylight', 'wd', or a
       numeric column name split into quantiles.
     - date_col (str), hemisphere (str), n_levels (int): Passed to `cut_data`.
+    - latitude, longitude (float): Passed to `cut_data`; required by
+      type='daylight' for a real sunrise/sunset split.
     - ncols (int): Panels per row.
     - width, height (int or None): Figure size; height defaults to
       `panel_height` per row.
@@ -103,7 +105,7 @@ def facet_by_type(plot_fn, df, type, date_col='date_time', hemisphere='northern'
       a column named after `type`, or None if `plot_fn` returns only a figure.
     """
     tagged = cut_data(df, type=type, date_col=date_col, hemisphere=hemisphere,
-                      n_levels=n_levels)
+                      n_levels=n_levels, latitude=latitude, longitude=longitude)
     levels = _levels_of(tagged[type])
     if not levels:
         raise ValueError(f"Conditioning on '{type}' produced no levels.")
@@ -262,13 +264,21 @@ def conditionable(fn):
     import functools
     import inspect
 
+    try:
+        own = set(inspect.signature(fn).parameters)
+    except (TypeError, ValueError):  # pragma: no cover - exotic callables
+        own = set()
+
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
         condition = kwargs.pop('type', None)
+        # Claimed only if the wrapped function does not define the name
+        # itself, so decorating never silently swallows its arguments.
         facet_kwargs = {
             name: kwargs.pop(name)
-            for name in ('ncols', 'hemisphere', 'n_levels', 'panel_height')
-            if name in kwargs
+            for name in ('ncols', 'hemisphere', 'n_levels', 'panel_height',
+                         'latitude', 'longitude')
+            if name in kwargs and name not in own
         }
         if condition is None:
             return fn(*args, **kwargs)
@@ -296,6 +306,10 @@ def conditionable(fn):
             inspect.Parameter('n_levels', inspect.Parameter.KEYWORD_ONLY, default=4),
             inspect.Parameter('panel_height', inspect.Parameter.KEYWORD_ONLY,
                               default=380),
+            inspect.Parameter('latitude', inspect.Parameter.KEYWORD_ONLY,
+                              default=None),
+            inspect.Parameter('longitude', inspect.Parameter.KEYWORD_ONLY,
+                              default=None),
         ]
         existing = set(original.parameters)
         keep = [p for p in original.parameters.values()
@@ -321,6 +335,9 @@ _TYPE_DOC = """
     - hemisphere (str): 'northern' or 'southern', for season definitions.
     - n_levels (int): Quantile count when `type` names a numeric column.
     - panel_height (int): Height in pixels of each panel row.
+    - latitude, longitude (float): Site position, in degrees north and east.
+      Only used by type='daylight', which needs them to know when the sun
+      actually rose; without them it falls back to a fixed window and warns.
 
     When conditioning, panels share one colour scale and one set of axis
     limits so they can be compared. Any other keyword is passed to every

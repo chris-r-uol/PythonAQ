@@ -96,6 +96,24 @@ class TestPolarPlots:
         fig = polar_plot(aq_df, conc_col='NO2', render='tile')
         assert len(fig.layout.shapes) > 100
 
+    def test_tile_mode_does_not_punch_a_hole_at_north(self, aq_df):
+        """Regression: the coverage mask is indexed by wind direction, which is
+        circular. Morphological cleanup used to treat 0 and 360 degrees as
+        opposite ends of a rectangle and erode the join, cutting a wedge out of
+        the north of every tiled plot. Wind speed is not circular and is still
+        allowed to erode at the rim.
+        """
+        from PythonAQ.polar_plot import _polar_surface, _prepare_polar_data
+
+        data, ws_max = _prepare_polar_data(aq_df, 'ws', 'wd', 'NO2', 'auto')
+        _, _, Z, _, _ = _polar_surface(data, 'ws', 'wd', 'NO2', ws_max, 16, 48,
+                                       3, 10, 'tile', 300, None, None, True,
+                                       None)
+        populated = np.isfinite(Z).sum(axis=1)
+        seam = populated[[-2, -1, 0, 1]]
+        assert (seam > 0).all(), 'the north seam was erased'
+        assert np.abs(seam - np.median(populated)).max() <= 2
+
     def test_invalid_render_raises(self, aq_df):
         with pytest.raises(ValueError, match='render must be'):
             polar_plot(aq_df, conc_col='NO2', render='nonsense')

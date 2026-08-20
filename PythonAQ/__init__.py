@@ -36,6 +36,8 @@ from .data import (
 from .conditional_quantile import conditional_quantile
 from .corr_plot import corr_plot
 from .map_sites import map_sites
+from .maps import (annulus_map, freq_map, percentile_rose_map, polar_map,
+                   pollutant_rose_map, wind_rose_map)
 from .percentile_rose import percentile_rose
 from .conditional_eval import conditional_eval
 from .dist_plot import dist_plot
@@ -95,12 +97,15 @@ __all__ = [
     "dist_plot",
     "map_sites",
     "percentile_rose",
+    "percentile_rose_map",
     "polar_annulus",
     "polar_cluster",
     "polar_diff",
     "polar_frequency_plot",
+    "polar_map",
     "polar_plot",
     "pollutant_rose",
+    "pollutant_rose_map",
     "scatter_plot",
     "smooth_trend_plot",
     "summary_plot",
@@ -111,8 +116,10 @@ __all__ = [
     "time_variation",
     "trend_level",
     "wind_rose",
+    "wind_rose_map",
     # Statistics
     "aq_stats",
+    "annulus_map",
     "mod_stats",
     # Utilities
     "bin_data",
@@ -121,6 +128,7 @@ __all__ = [
     "date_pad",
     "deseason_data",
     "e_sat",
+    "freq_map",
     "get_period",
     "gaussian_smooth",
     "is_daylight",

@@ -137,7 +137,7 @@ def _polar_surface(data, ws_col, wd_col, conc_col, ws_max, ws_bins, wd_bins,
         if neighbours > 1:
             distance = distance[:, -1]
         keep = distance.reshape(Z.shape) <= exclude_distance
-        keep = _tidy_mask(keep)
+        keep = _tidy_mask(keep, wrap_axis=0 if render == 'tile' else None)
         Z = np.where(keep, Z, np.nan)
 
     if np.all(np.isnan(Z)):
@@ -273,13 +273,19 @@ def polar_plot(
     return fig
 
 
-def _tidy_mask(keep, radius=2):
+def _tidy_mask(keep, radius=2, wrap_axis=None):
     """Remove speckle from the coverage mask and close pinholes in it.
 
     Thresholding a distance field cell by cell leaves isolated specks just
     inside the cut-off and single-cell holes just outside, which read as noise
     along the boundary. A morphological opening then closing removes both while
     leaving the overall shape of the covered region alone.
+
+    `wrap_axis` names an axis that is circular, which for a mask indexed by
+    wind direction is the direction axis. Without it the morphology treats
+    0 and 360 degrees as opposite ends of a rectangle and erodes the join,
+    punching a wedge out of the north of every plot. Wind speed is not
+    circular, so its axis is deliberately left to erode at the rim.
     """
     try:
         from scipy.ndimage import binary_closing, binary_opening
@@ -291,12 +297,24 @@ def _tidy_mask(keep, radius=2):
     disc = (x ** 2 + y ** 2) <= radius ** 2 + 1e-9
     assert disc.shape == (size, size)
 
-    opened = binary_opening(keep, structure=disc)
+    padded = keep
+    if wrap_axis is not None:
+        widths = [(0, 0)] * keep.ndim
+        widths[wrap_axis] = (radius, radius)
+        padded = np.pad(keep, widths, mode='wrap')
+
+    opened = binary_opening(padded, structure=disc)
     # Opening can erase a genuinely small covered region entirely; if so, keep
     # the original rather than silently dropping data.
     if not opened.any():
         return keep
-    return binary_closing(opened, structure=disc)
+    tidied = binary_closing(opened, structure=disc)
+
+    if wrap_axis is not None:
+        trim = [slice(None)] * keep.ndim
+        trim[wrap_axis] = slice(radius, -radius)
+        tidied = tidied[tuple(trim)]
+    return tidied
 
 
 def _hover_template(conc_col):

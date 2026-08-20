@@ -17,6 +17,8 @@ Carto Dark Matter as the dark counterpart. Both are deliberately low-contrast:
 a full-colour basemap competes with the data drawn on top of it.
 """
 
+import warnings
+
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -29,6 +31,13 @@ __all__ = ['annulus_map', 'freq_map', 'percentile_rose_map', 'polar_map',
            'pollutant_rose_map', 'wind_rose_map']
 
 _KM_PER_DEGREE = 111.32
+# Marker diameter as a fraction of the mapped extent, below which the
+# automatic radius is reported as cramped. Measured against real networks:
+# three West Yorkshire sites one per town give 0.57 and read comfortably,
+# while adding Leeds Headingley 2.7 km from Leeds Centre drops every marker
+# to 0.13 and they stop being legible. A fifth sits clear of both rather than
+# being fitted to either.
+_CRAMPED = 0.20
 _LATITUDE_NAMES = ('latitude', 'lat', 'Latitude', 'LATITUDE')
 _LONGITUDE_NAMES = ('longitude', 'lon', 'lng', 'long', 'Longitude', 'LONGITUDE')
 _SITE_NAMES = ('site_id', 'site', 'site_name', 'code', 'station')
@@ -90,7 +99,14 @@ def _auto_radius(positions):
     """Choose a marker radius that keeps neighbouring markers apart.
 
     Overlapping markers are worse than small ones: two overlapping polar plots
-    cannot be read at all, whereas a small one can be zoomed into.
+    cannot be read at all, whereas a small one can be zoomed into. The radius
+    is therefore set by the closest pair of sites, not by the size of the map.
+
+    The cost is that one close pair shrinks every marker on the map, including
+    markers nowhere near it. That is inherent to drawing on the ground rather
+    than pinning fixed-size icons, so the default is kept and `radius_km`
+    named in a warning when it starts to matter, rather than being something
+    to discover after squinting at the result.
     """
     if len(positions) < 2:
         return 2.0
@@ -104,10 +120,23 @@ def _auto_radius(positions):
     for i in range(len(coordinates)):
         for j in range(i + 1, len(coordinates)):
             separations.append(np.hypot(north[i] - north[j], east[i] - east[j]))
-    closest = min(separations)
+    closest, furthest = min(separations), max(separations)
     if closest <= 0:
         return 2.0
-    return float(np.clip(0.35 * closest, 0.3, 25.0))
+    radius = float(np.clip(0.35 * closest, 0.3, 25.0))
+
+    # A marker spanning a small fraction of the mapped area cannot be read at
+    # the zoom that shows every site, however correct it is.
+    if furthest > 0 and 2 * radius / furthest < _CRAMPED:
+        warnings.warn(
+            f'The closest two sites are {closest:.1f} km apart but the map '
+            f'spans {furthest:.0f} km, so markers are drawn at {radius:.1f} km '
+            'to stop them overlapping and will be small. Pass radius_km= to '
+            'draw them larger and accept the overlap, or map a subset of the '
+            'sites.',
+            UserWarning, stacklevel=3,
+        )
+    return radius
 
 
 def _band_colours(palette, n_levels):
@@ -240,7 +269,10 @@ def polar_map(df, pollutant='NO2', ws_col='ws', wd_col='wd', site=None,
       automatically among the usual spellings.
     - radius_km (float or None): How far each plot reaches on the ground.
       None picks 35% of the distance between the two closest sites, so
-      markers do not overlap.
+      markers do not overlap; one close pair therefore shrinks every marker
+      on the map, and a warning names this argument when that leaves them
+      under a fifth of the width of the mapped area. Setting it explicitly
+      accepts any overlap and silences the warning.
     - map_style (str): Basemap. 'carto-positron' (default) and
       'carto-darkmatter' are the muted OpenStreetMap styles, light and dark.
     - colour_palette (str or list): Plotly colour scale.

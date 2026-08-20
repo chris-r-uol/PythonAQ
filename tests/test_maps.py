@@ -6,6 +6,8 @@ maps is presentation, but that one property is what makes them worth having,
 and it is the one a coordinate-sign error silently destroys.
 """
 
+import warnings
+
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -111,6 +113,34 @@ class TestAutoRadius:
 
     def test_a_lone_site_gets_a_sensible_radius(self):
         assert 0 < _auto_radius([(53.8, -1.5)]) <= 25
+
+    def test_warns_when_one_close_pair_shrinks_every_marker(self):
+        """The default keeps markers from overlapping, which means one close
+        pair shrinks markers nowhere near it. That is inherent to drawing on
+        the ground, so the override is named at the moment it starts to
+        matter rather than left to be discovered."""
+        cramped = [(53.80, -1.55), (53.80, -1.51),   # ~2.6 km apart
+                   (53.70, -1.30), (53.90, -1.90)]   # tens of km away
+        with pytest.warns(UserWarning, match='radius_km'):
+            _auto_radius(cramped)
+
+    def test_no_warning_when_markers_are_readable(self):
+        spread = [(53.80, -1.55), (53.70, -1.30), (53.90, -1.90)]
+        with warnings.catch_warnings():
+            warnings.simplefilter('error')
+            _auto_radius(spread)
+
+    def test_no_warning_for_a_single_site(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter('error')
+            _auto_radius([(53.8, -1.5)])
+
+    def test_explicit_radius_never_warns(self, network):
+        """The warning exists to point at radius_km; having taken the hint,
+        the user must not keep being told."""
+        with warnings.catch_warnings():
+            warnings.simplefilter('error')
+            polar_map(network, 'NO2', radius_km=3.0, ws_bins=10, wd_bins=24)
 
     def test_closer_sites_get_smaller_markers(self):
         wide = _auto_radius([(53.8, -1.9), (53.8, -1.1)])

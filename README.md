@@ -477,9 +477,20 @@ wind was fast, not that the source is that far away.
 
 By default `radius_km` is 35% of the distance between the two closest sites,
 so markers cannot overlap — two overlapping polar plots cannot be read at all.
-The consequence is that two sites a couple of kilometres apart shrink every
-marker on a wide map. Set `radius_km` explicitly to trade overlap for
-legibility.
+The consequence is that one close pair shrinks *every* marker on the map,
+including markers nowhere near it. That is inherent to drawing on the ground
+rather than pinning fixed-size icons, so the default stands and the override
+is pointed at when it starts to matter:
+
+```python
+polar_map(df, 'NO2')                   # markers sized not to overlap
+polar_map(df, 'NO2', radius_km=3)      # larger, and they may overlap
+```
+
+If the automatic radius leaves markers under a fifth of the width of the
+mapped area, a warning names `radius_km` rather than leaving you to work it
+out from the figure. Passing it explicitly silences the warning, since you
+have already made the choice.
 
 The colour scale and the radial extent are **shared across sites** by default.
 Comparing sites is the only reason to draw them together, and a per-site scale

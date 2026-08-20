@@ -40,6 +40,7 @@ from PythonAQ import (  # noqa: E402
     dist_plot, download_aurn_data, gaussian_smooth, import_aq_meta,
     kz_filter, linear_relation, map_sites, percentile_rose,
     polar_annulus, polar_cluster, polar_diff, polar_frequency_plot,
+    polar_map, wind_rose_map,
     polar_plot, pollutant_rose, rolling_quantile, run_regression,
     scatter_plot, smooth_trend_plot, summary_plot, taylor_diagram,
     theil_sen_plot, time_plot, time_prop, time_variation, trend_level,
@@ -173,6 +174,45 @@ def load_data(refresh: bool = False) -> tuple[pd.DataFrame, pd.DataFrame]:
     return metadata, aq
 
 
+NETWORK_SITES = ['LEED', 'DYAG', 'BDMA']
+
+
+def load_network(metadata: pd.DataFrame, refresh: bool = False) -> pd.DataFrame:
+    """Several West Yorkshire sites, for the maps.
+
+    One site per town rather than every nearby site: markers are drawn on the
+    ground and sized not to overlap, so two sites a couple of kilometres apart
+    force every marker on a 25 km map down to something unreadable.
+    """
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cache = CACHE_DIR / f'network_{START_YEAR}_{END_YEAR}.parquet'
+    if cache.exists() and not refresh:
+        network = pd.read_parquet(cache)
+    else:
+        frames = []
+        for code in NETWORK_SITES:
+            try:
+                block = download_aurn_data(code, START_YEAR, END_YEAR, SOURCE)
+            except Exception as exc:                      # noqa: BLE001
+                print(f'  {code}: skipped ({type(exc).__name__})')
+                continue
+            block.columns = [str(c) for c in block.columns]
+            block['site_id'] = code
+            frames.append(block)
+        if not frames:
+            sys.exit('No network data available; cannot build the map figures.')
+        network = pd.concat(frames, ignore_index=True)
+        network.to_parquet(cache)
+
+    positions = (metadata[['site_id', 'site_name', 'latitude', 'longitude']]
+                 .drop_duplicates('site_id'))
+    network = network.merge(positions, on='site_id', how='left')
+    usable = network.dropna(subset=['ws', 'wd', 'NO2'])
+    print(f'  network: {usable["site_id"].nunique()} sites with wind and NO2, '
+          f'{len(usable):,} usable hours')
+    return network
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--refresh', action='store_true',
@@ -230,6 +270,17 @@ def main() -> int:
     save(polar_diff(early, late, conc_col='NO2', min_count=10, resolution=400,
                     title='NO2 change, 2024-25 against 2022-23'),
          'polar_diff', width=760, height=700)
+
+    network = load_network(metadata, refresh=args.refresh)
+    save(polar_map(network, 'NO2', site='site_name', ws_bins=18, wd_bins=48,
+                   width=1000, height=780,
+                   title='NO2 by wind speed and direction, '
+                         'West Yorkshire 2022-2025'),
+         'polar_map', width=1000, height=780)
+
+    save(wind_rose_map(network, site='site_name', width=1000, height=780,
+                       title='Wind roses across the West Yorkshire sites'),
+         'wind_rose_map', width=1000, height=780)
 
     save(dist_plot(aq, [c for c in ('NO2', 'PM2.5', 'O3') if c in aq.columns],
                    title='Distribution of the measured pollutants'),

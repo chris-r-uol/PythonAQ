@@ -39,11 +39,12 @@ from PythonAQ import (  # noqa: E402
     e_sat, gaussian_smooth, get_period, import_aq_meta, is_daylight, kz_filter,
     linear_relation, map_sites, mod_stats, percentile_rose, polar_annulus,
     polar_cluster, polar_diff, polar_frequency_plot, polar_plot, pollutant_rose,
+    annulus_map, freq_map, percentile_rose_map, polar_map, pollutant_rose_map,
     quick_text, rh, rolling_mean, rolling_quantile, run_regression,
     scatter_plot, select_by_date, select_running, smooth_trend_plot,
     solar_elevation, split_by_date, summary_plot, taylor_diagram,
     theil_sen_plot, time_average, time_plot, time_prop, time_variation,
-    trend_level, whittaker_smooth, wind_rose,
+    trend_level, whittaker_smooth, wind_rose, wind_rose_map,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -209,6 +210,33 @@ def _solar_lines(aq):
     return lines
 
 
+NETWORK_SITES = ['LEED', 'DYAG', 'BDMA']
+
+
+def load_network(metadata):
+    """Several West Yorkshire sites, for the map entries.
+
+    One site per town: markers are drawn on the ground and sized not to
+    overlap, so two sites a couple of kilometres apart shrink every marker on
+    a wide map to something unreadable.
+    """
+    cache = CACHE_DIR / 'network_2022_2025.parquet'
+    if cache.exists():
+        network = pd.read_parquet(cache)
+    else:
+        frames = []
+        for code in NETWORK_SITES:
+            block = download_aurn_data(code, START, END, SOURCE)
+            block.columns = [str(c) for c in block.columns]
+            block['site_id'] = code
+            frames.append(block)
+        network = pd.concat(frames, ignore_index=True)
+        network.to_parquet(cache)
+    positions = (metadata[['site_id', 'site_name', 'latitude', 'longitude']]
+                 .drop_duplicates('site_id'))
+    return network.merge(positions, on='site_id', how='left')
+
+
 def load():
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     meta_cache = CACHE_DIR / 'aurn_meta.parquet'
@@ -231,7 +259,7 @@ def load():
     return metadata, aq
 
 
-def build_entries(metadata, aq):
+def build_entries(metadata, aq, network):
     # ---------------------------------------------------------------- data ---
     entry('import_aq_meta', 'Getting data',
           'Site metadata for a UK monitoring network.',
@@ -316,6 +344,92 @@ def build_entries(metadata, aq):
                'be symmetric about zero, so white always means no change. '
                'Blank sectors are those one period cannot support - unmeasured '
                'rather than unchanged.')
+
+    # ------------------------------------------------------------- maps ---
+    entry('polar_map', 'Maps',
+          "Polar plots at their sites' positions.",
+          """
+          from PythonAQ import import_aq_meta, polar_map
+
+          meta = import_aq_meta('aurn')[['site_id', 'latitude', 'longitude']]
+          df = df.merge(meta.drop_duplicates('site_id'), on='site_id')
+
+          polar_map(df, 'NO2')
+          """,
+          figure(polar_map(network, 'NO2', site='site_name', ws_bins=14,
+                           wd_bins=36, title=None), height=560),
+          note='A polar plot says which direction a source lies in; the map '
+               'says what is in that direction. Bradford Mayo Avenue is a '
+               'roadside site and looks like one. The radial axis is wind '
+               'speed, not distance: marker size on the ground is set by '
+               '<code>radius_km</code>.')
+
+    entry('wind_rose_map', 'Maps',
+          'Wind roses at their sites.',
+          """
+          from PythonAQ import wind_rose_map
+
+          wind_rose_map(df)
+          """,
+          figure(wind_rose_map(network, site='site_name', title=None),
+                 height=520),
+          note='All three share the West Yorkshire prevailing westerly, which '
+               'is the point of drawing them together: a site that disagreed '
+               'would be worth investigating.')
+
+    entry('freq_map', 'Maps',
+          'How often the wind blows each way, per site.',
+          """
+          from PythonAQ import freq_map
+
+          freq_map(df, map_style='carto-darkmatter')
+          """,
+          figure(freq_map(network, site='site_name', ws_bins=10, wd_bins=24,
+                          map_style='carto-darkmatter', title=None),
+                 height=500),
+          note='Shown on the dark basemap; every map takes '
+               "<code>map_style='carto-darkmatter'</code>. Worth putting "
+               'beside <code>polar_map</code>: a striking feature in a sector '
+               'the wind rarely comes from is not a finding.')
+
+    entry('pollutant_rose_map', 'Maps',
+          'A pollution rose per site.',
+          """
+          from PythonAQ import pollutant_rose_map
+
+          pollutant_rose_map(df, 'NO2')
+          """,
+          figure(pollutant_rose_map(network, 'NO2', site='site_name',
+                                    wd_bins=12, title=None), height=500),
+          note='Petal length is how often the wind came from that sector; the '
+               'colours divide it by concentration band.')
+
+    entry('percentile_rose_map', 'Maps',
+          'A percentile of concentration by wind direction, per site.',
+          """
+          from PythonAQ import percentile_rose_map
+
+          percentile_rose_map(df, 'NO2', percentile=95)
+          """,
+          figure(percentile_rose_map(network, 'NO2', site='site_name',
+                                     percentile=95, wd_bins=24, title=None),
+                 height=500),
+          note='A high percentile answers a different question from a mean: a '
+               'sector whose 95th percentile is high but whose mean is not '
+               'has occasional episodes rather than a steady contribution.')
+
+    entry('annulus_map', 'Maps',
+          'Wind direction around the ring, time through it, per site.',
+          """
+          from PythonAQ import annulus_map
+
+          annulus_map(df, 'NO2', period='hour')
+          """,
+          figure(annulus_map(network, 'NO2', site='site_name', period='hour',
+                             wd_bins=24, title=None), height=500),
+          note='The inner edge is the first period and the outer edge the '
+               'last, so a source active only at night shows as a bright band '
+               'at both edges of an hour annulus rather than one arc.')
 
     entry('polar_annulus', 'Directional analysis',
           'Wind direction around the ring, a temporal variable through it.',
@@ -1227,8 +1341,9 @@ def main() -> int:
     print(f'PythonAQ {PythonAQ.__version__} - building the guide')
 
     metadata, aq = load()
+    network = load_network(metadata)
     print(f'  {len(aq):,} hourly records for {SITE}')
-    build_entries(metadata, aq)
+    build_entries(metadata, aq, network)
 
     page = render(PythonAQ.__version__)
     target = OUT_DIR / 'index.html'

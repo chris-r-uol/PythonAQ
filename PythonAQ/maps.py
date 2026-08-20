@@ -193,15 +193,22 @@ def _finalise(fig, frames, radius_km, map_style, title, zoom, width, height,
     longitudes = [f[2] for f in frames]
     centre = dict(lat=float(np.mean(latitudes)), lon=float(np.mean(longitudes)))
     if zoom is None:
-        # Fit the markers and the sites they surround. The span is padded by a
-        # marker radius on each side so the outermost plot is not clipped.
-        span_lat = (max(latitudes) - min(latitudes)
-                    + 2 * radius_km / _KM_PER_DEGREE)
+        # Fit the markers and the sites they surround, padded by a marker
+        # radius on each side so the outermost plot is not clipped.
         shrink = max(np.cos(np.deg2rad(centre['lat'])), 1e-6)
+        span_lat = (max(latitudes) - min(latitudes)
+                    + 2.4 * radius_km / _KM_PER_DEGREE)
         span_lon = (max(longitudes) - min(longitudes)
-                    + 2 * radius_km / (_KM_PER_DEGREE * shrink))
-        span = max(span_lat, span_lon * shrink, 1e-4)
-        zoom = float(np.clip(np.log2(360.0 / span) - 0.4, 1.0, 16.0))
+                    + 2.4 * radius_km / (_KM_PER_DEGREE * shrink))
+
+        # A web map shows a span of longitude across its *width*. Fitting a
+        # latitude span therefore needs that converted through the aspect
+        # ratio: on a landscape figure there is less vertical room than
+        # horizontal, and comparing the two spans directly silently clips the
+        # northernmost and southernmost markers.
+        aspect = max(width, 1) / max(height, 1)
+        needed = max(span_lon, span_lat * aspect / shrink, 1e-6)
+        zoom = float(np.clip(np.log2(360.0 / needed), 1.0, 16.0))
 
     fig.update_layout(
         map=dict(style=map_style, center=centre, zoom=zoom),
